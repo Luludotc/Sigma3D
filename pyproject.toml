@@ -1,0 +1,19 @@
+[project]
+name = "Sigma3D"
+version = "0.0.1"
+authors = [
+  { name="Ronak Sharma", email="sharma.ronak2311@gmail.com" },
+]
+description = "Sigma3D is a cool package for basic 3D rendering."
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+license = "MIT"
+license-files = ["LICEN[CS]E*"]
+
+[project.urls]
+Homepage = "https://github.com/pypa/sampleproject"
+Issues = "https://github.com/pypa/sampleproject/issues"
