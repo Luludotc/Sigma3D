@@ -133,12 +133,15 @@ class Physics:
         sphere_2.position -= direction * move_dist
         
 
+'''
+For handling DirectionalLight shader buffer.
+'''
 class _DirectionalLightShaderBuffer:
     def __init__(self):
        self.ssbo = _ctx.buffer(dynamic=True,reserve=1)
        self.buffer = []
        self.buffer_stride = 11 # in floats, 11 * 4 = 44 bytes
-    
+
     def update(self) -> None:
         self.buffer.clear()
 
@@ -163,6 +166,9 @@ class _DirectionalLightShaderBuffer:
 
         shader.program['udlcount'] = int(len(self.buffer) / self.buffer_stride)
 
+'''
+For handling PointLight shader buffer.
+'''
 class _PointLightShaderBuffer:
     def __init__(self):
        self.ssbo = _ctx.buffer(dynamic=True,reserve=1)
@@ -193,15 +199,24 @@ class _PointLightShaderBuffer:
 
         shader.program['uplcount'] = int(len(self.buffer) / self.buffer_stride)
 
+'''
+Provides GLSL shader support.
+'''
 class Shader:
     def __init__(self):
         self.program = None
 
+    '''
+    Load a shader file.
+    '''
     @staticmethod
     def load(path: str):
         with open(path) as file:
             return Shader.load_from_buffer(file.read())
     
+    '''
+    Load shader from buffer(string)
+    '''
     @staticmethod 
     def load_from_buffer(buffer: str):
         vs_source = ""
@@ -226,11 +241,17 @@ class Shader:
         )
         return shader
 
+'''
+Class for strong a vertex three dimensional geometry.
+'''
 class Vertex:
     def __init__(self, position: vec3, normal: vec3 = vec3(0)):
         self.position = position
         self.normal = normal
 
+'''
+A 3D Triangle Mesh.
+'''
 class Mesh:
     def __init__(
             self, position: vec3 = vec3(0),  rotation: vec3 = vec3(0), scale: vec3 = vec3(1), color: vec3 = vec3(1),
@@ -250,6 +271,9 @@ class Mesh:
         self.refresh()
         _all_objects.append(self)
     
+    '''
+    Recalculate the normals for each triangle.
+    '''
     def regenerate_normals(self) -> None:
         for i in range(len(self.vertices) // 3):
             norm = normalize(cross(
@@ -266,6 +290,9 @@ class Mesh:
             self.vertices[i * 3 + 2].normal = norm
             self.vertices[i * 3 + 1].normal = norm
 
+    '''
+    Update the shader (should be called after modifying the mesh).
+    '''
     def refresh(self) -> None:
         if len(self.vertices) == 0: return
 
@@ -282,11 +309,18 @@ class Mesh:
         self._vbo = _ctx.buffer(self._vert.tobytes())
         self._vao = _ctx.vertex_array(self.shader.program, [(self._vbo, '3f 3f', 'in_vert', 'in_norm')])
     
+    '''
+    Delete the mesh.
+    '''
     def delete(self) -> None:
         global _all_objects
         _all_objects = []
         del self
     
+    '''
+    NOTE: Don't call this function by yourself, unless you know what you're doing.
+    Renders the mesh (only!).
+    '''
     def render(self) -> None:
         if _active_camera == None:
             raise "Inactive camera: Cannot render an object when no camera is active."
@@ -302,6 +336,10 @@ class Mesh:
         self.shader.program['uMVP'] = tup
         self._vao.render(moderngl.TRIANGLES)
     
+    '''
+    Takes a list of vertices, copies it again with inverted normals to
+    create a "back side".
+    '''
     @staticmethod
     def add_double_sided(verts: list[Vertex]):
         for v in range(len(verts) // 3):
@@ -309,7 +347,9 @@ class Mesh:
             verts.append(Vertex(vec3(*verts[v * 3 + 2].position.to_tuple())))
             verts.append(Vertex(vec3(*verts[v * 3 + 1].position.to_tuple())))
 
-    
+    '''
+    Create a unit box.
+    '''
     @staticmethod
     def create_box(double_sided: bool = False):
         loc = [
@@ -338,6 +378,9 @@ class Mesh:
 
         return Mesh(vertices=verts)
     
+    '''
+    Create a unit quad.
+    '''
     @staticmethod
     def create_quad(double_sided: bool = True):
         verts = [
@@ -354,6 +397,9 @@ class Mesh:
 
         return Mesh(vertices=verts)
 
+    '''
+    Create a unit disc (circle).
+    '''
     @staticmethod
     def create_disc(divisions: int = 32, double_sided: bool = True):
         verts = []
@@ -372,6 +418,9 @@ class Mesh:
         
         return Mesh(vertices=verts)
     
+    '''
+    Create a sphere.
+    '''
     @staticmethod
     def create_sphere(radius : float = 1.0, divisions: int = 32, double_sided: bool = False):
         verts = []
@@ -431,20 +480,32 @@ class Mesh:
         
         return Mesh(vertices=verts)
 
+'''
+Class for drawing stuff.
+'''
 class Drawer:
     def __init__(self):
         self.clear_color = vec4(0.05)
         self.dlsb = _DirectionalLightShaderBuffer()
         self.plsb = _PointLightShaderBuffer()
     
+    '''
+    Draws all the active scene objects, called at the end of the callback loop.
+    '''
     def _draw_all(self) -> None:
         for obj in _all_objects:
             self.draw_mesh(obj)
     
+    '''
+    Update the lighting. Called just before rendering.
+    '''
     def _update(self) -> None:
         self.dlsb.update()
         self.plsb.update()
     
+    '''
+    Clear the screen.
+    '''
     def clear(self) -> None:
         _ctx.clear(
                 self.clear_color.x,
@@ -453,6 +514,9 @@ class Drawer:
                 self.clear_color.w,
             )
     
+    '''
+    Draw a specified mesh.
+    '''
     def draw_mesh(self, mesh: Mesh) -> None:
         if _active_camera is None: return
         self.dlsb.plz_do_something(mesh.shader)
@@ -465,16 +529,28 @@ class Drawer:
         mesh.shader.program['ucolor'] = mesh.color.to_tuple()
         mesh.render()
     
+    '''
+    Set OpenGL Flags.
+    '''
     def _set_gl_flag(self, name, flag: bool) -> None:
         if flag: _ctx.enable(name)
         else: _ctx.disable(name)
     
+    '''
+    Enable/Disable face culling.
+    '''
     def set_cull_face(self, flag: bool) -> None:
         self._set_gl_flag(_ctx.CULL_FACE, flag)
 
+    '''
+    Enable/Disable Depth Test.
+    '''
     def set_depth_test(self, flag: bool) -> None:
         self._set_gl_flag(_ctx.DEPTH_TEST, flag)
     
+'''
+Base class for light.
+'''
 class Light:
     def __init__(self, color: vec3 = vec3(1, 1, 1)):
         self.intensity = 1.0
@@ -485,6 +561,9 @@ class Light:
         self.color = color
         self.activate()
     
+    '''
+    Activate the light.
+    '''
     def activate(self):
         global _active_lights
         for light in _active_lights:
@@ -492,6 +571,9 @@ class Light:
         
         _active_lights.append(self)
 
+    '''
+    Deactivate the light.
+    '''
     def deactivate(self):
         global _active_lights
         for light in _active_lights:
@@ -500,16 +582,25 @@ class Light:
             _active_lights.remove(light)
             return
 
+'''
+Directional Light, can be used to simulate sunlight.
+'''
 class DirectionalLight(Light):
     def __init__(self, color: vec3 = vec3(1), direction: vec3 = vec3(1.5, -1, 2)):
         super().__init__(color)
         self.direction = normalize(direction)
 
+'''
+Point Light, can be used to simulate objects like lanters.
+'''
 class PointLight(Light):
     def __init__(self, color: vec3 = vec3(1), position: vec3 = vec3(0)):
         super().__init__(color)
         self.position = position
 
+'''
+A basic camera class.
+'''
 class Camera:
     def __init__(self, position: vec3 = vec3(0), yaw: float = pi() / 2, pitch: float = 0,
                 FOV : float = radians(60), near: float = 0.2, far: float = 1000, up: vec3 = vec3(0, 1, 0)):
@@ -521,6 +612,9 @@ class Camera:
         self.far = far
         self.up = up
     
+    '''
+    Get the forward direction of camera.
+    '''
     def get_forward(self) -> vec3:
         return normalize(vec3(
             cos(self.yaw) * cos(self.pitch),
@@ -528,29 +622,45 @@ class Camera:
             sin(self.yaw) * cos(self.pitch)
         ))
 
+    '''
+    Get the right direction of camera.
+    '''
     def get_right(self) -> vec3:
         return cross(self.get_forward(), self.up)
     
     '''
+    Get the up direction of camera.
     NOTE: This is different from Camera.up!
     '''
     def get_up(self) -> vec3:
         return cross(self.get_right(), self.get_forward())
 
+    '''
+    Get the Viewport-Projection matrix for the camrea.
+    '''
     def get_vp_matrix(self) -> mat4:
         view = lookAt(self.position, self.position + self.get_forward(), self.up)
         proj = perspective(self.FOV, _global_window.aspect_ratio, self.near, self.far)
         return proj * view
 
+    '''
+    Activate the camera.
+    '''
     def use(self) -> None:
         global _active_camera
         _active_camera = self
     
+    '''
+    Deactivate the current active camera.
+    '''
     @staticmethod
     def use_none() -> None:
         global _active_camera
         _active_camera = None
     
+    '''
+    Control the camera.
+    '''
     def control(self, active_key = K_ESCAPE, move_keys = (K_w, K_a, K_s, K_d, K_e, K_q),
               movement_speed = 10, camera_sensitivity = 0.002) -> None:
         if _global_window is None: return
@@ -576,7 +686,9 @@ class Camera:
         movement = normalize(movement)
         self.position += movement * _global_window.deltaTime * movement_speed
     
-
+'''
+Creates a window and OpenGL context.
+'''
 class Window:
     def __init__(self, width: int, height: int, title: str = "Sigma3D Window", max_fps: int = None):
         global _ctx
@@ -614,39 +726,69 @@ class Window:
 
         _init_utils(self)
 
+    '''
+    Set the maximum framerate.
+    '''
     def set_max_fps(self, fps: int) -> None:
         self._maxFPS = fps
 
+    '''
+    Set the size of the window.
+    '''
     def set_size(self, width: int, height: int) -> None:
         self._width = width
         self._height = height
         pygame.display.set_mode((width, height), pygame.OPENGL | pygame.DOUBLEBUF | pygame.RESIZABLE)
 
+    '''
+    Set the title of the window.
+    '''
     def set_title(self, title: str) -> None:
         self._title = title
         pygame.display.set_caption(title)
     
+    '''
+    Returns the siz eof the window.
+    '''
     def get_size(self) -> tuple[int, int]:
         return self.window.get_size()
 
+    '''
+    Returns the title of the window.
+    '''
     def get_title(self) -> str:
         return self._title
     
+    '''
+    Lock the mouse pointer.
+    '''
     def lock_mouse(self) -> None:
         pygame.event.set_grab(True)
         pygame.mouse.set_visible(False)
-        
+    
+    '''
+    Unlock the mouse pointer.
+    '''
     def unlock_mouse(self) -> None:
         pygame.event.set_grab(False)
         pygame.mouse.set_visible(True)
     
+    '''
+    Returns whether the mouse is locked or not.
+    '''
     def is_mouse_locked(self) -> bool:
         return pygame.event.get_grab()
     
+    '''
+    Returns whether the given key is being pressed.
+    '''
     def is_key_down(self, key) -> None:
         try: return self._key_state[key]
         except KeyError: return False
     
+    '''
+    Returns whether the given key is just pressed in the current frame.
+    '''
     def is_key_pressed(self, key) -> None:
         s1 = False
         s2 = False
@@ -656,6 +798,9 @@ class Window:
         except: s2 = False
         return s1 == True and s2 == False
     
+    '''
+    Returns whether the given key is just released in the current frame.
+    '''
     def is_key_released(self, key) -> None:
         s1 = False
         s2 = False
@@ -665,10 +810,16 @@ class Window:
         except: s2 = False
         return s1 == False and s2 == True
     
+    '''
+    Returns whether the given mouse button is being pressed.
+    '''
     def is_mouse_down(self, button) -> None:
         try: return self._mouse_state[button]
         except KeyError: return False
     
+    '''
+    Returns whether the given mouse button is just pressed in the current frame.
+    '''
     def is_mouse_pressed(self, button) -> None:
         s1 = False
         s2 = False
@@ -678,6 +829,9 @@ class Window:
         except: s2 = False
         return s1 == True and s2 == False
     
+    '''
+    Returns whether the given mouse button is just released in the current frame.
+    '''
     def is_mouse_released(self, button) -> None:
         s1 = False
         s2 = False
@@ -687,10 +841,16 @@ class Window:
         except: s2 = False
         return s1 == False and s2 == True
     
+    '''
+    Returns the framerate of the window.
+    '''
     def get_fps(self) -> None:
         if self.deltaTime == 0: return 1000.0
         return 1.0 / self.deltaTime
     
+    '''
+    Starts the loop.
+    '''
     def start_loop(self, callback: callable) -> None:
         while True:
             start_time_ms = int(round(time.time() * 1000))
@@ -722,6 +882,9 @@ class Window:
             self.deltaTime = (end_time_ms - start_time_ms) / 1000
             self.time_elapsed += self.deltaTime
 
+    '''
+    Update stuff.
+    '''
     def _update(self) -> None:
         self.aspect_ratio = self._width / self._height
         _ctx.viewport = 0, 0, self._width, self._height
@@ -736,7 +899,9 @@ class Window:
         if pygame.event.get_grab():
             pygame.mouse.set_pos(self._width / 2, self._height / 2)
 
-
+'''
+Initialize shaders and stuff.
+'''
 def _init_utils(window: Window) -> None:
     global _basic_shader, _global_window
     _basic_shader = Shader().load_from_buffer(
