@@ -1,9 +1,38 @@
+from os import system
 import time
-import pygame
+import os
+os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
+
+try: 
+    import pygame
+except ImportError:
+    print("Installing pygame... Press Ctrl + C to cancel")
+    system('python3 -m pip install pygame')
+    import pygame
 from pygame.locals import *
-import numpy as np
-import moderngl
-from glm import *
+
+try: 
+    import numpy as np
+except ImportError:
+    print("Installing numpy... Press Ctrl + C to cancel")
+    system('python3 -m pip install numpy')
+    import numpy as np
+
+try: 
+    import moderngl
+except ImportError:
+    print("Installing moderngl... Press Ctrl + C to cancel")
+    system('python3 -m pip install moderngl')
+    import moderngl
+
+try: 
+    from glm import *
+except ImportError:
+    print("Installing pyglm... Press Ctrl + C to cancel")
+    system('python3 -m pip install pyglm')
+    from glm import *
+
+print("Sigma3D welcomes you.")
 
 _ctx = None
 _basic_shader = None
@@ -11,6 +40,98 @@ _global_window = None
 _active_camera = None
 _active_lights = []
 _all_objects = []
+
+'''
+Provides some basic methods to help in physics calculations.
+'''
+class Physics:
+    '''
+    A point object, uses verlet's integration for simulating dynamics.
+    '''
+    class Point:
+        def __init__(self, position: vec3):
+            self.position = position
+            self._last_position = position
+            self.acceleration = vec3(0)
+        
+        '''
+        Step forward in the simulation.
+        '''
+        def step(self, delta_time = 1 / 60) -> None:
+            velocity = self.get_velocity()
+            self._last_position = vec3(*self.position.to_tuple())
+            self.position += velocity + self.acceleration * delta_time
+            self.acceleration = vec3(0)
+        
+        '''
+        Set the position.
+        '''
+        def set_position(self, position: vec3) -> None:
+            self.position = vec3(*position.to_tuple())
+            self._last_position = vec3(*position.to_tuple())
+        
+        '''
+        Set the velocity.
+        '''
+        def set_velocity(self, velocity: vec3) -> None:
+            self._last_position = vec3(*(self.position - velocity).to_tuple())
+        
+        '''
+        Returns the velocity.
+        '''
+        def get_velocity(self) -> vec3:
+            return self.position - self._last_position
+        
+        '''
+        Set the acceleration.
+        '''
+        def set_acceleration(self, acceleration: vec3) -> None:
+            self.acceleration = acceleration
+        
+        '''
+        Accelerate the object.
+        '''
+        def accelerate(self, acceleration: vec3) -> None:
+            self.acceleration += acceleration
+    
+    '''
+    A sphere object.
+    '''
+    class Sphere(Point):
+        def __init__(self, position: vec3, radius: float):
+            super().__init__(position)
+            self.radius = radius
+    
+    '''
+    Returns whether two given spheres collide.
+    '''
+    @staticmethod
+    def check_collision_sphere(sphere_1: Sphere, sphere_2: Sphere) -> bool:
+        sub = sphere_1.position - sphere_2.position
+        return dot(sub, sub) >= (sphere_1.radius + sphere_2.radius) ** 2
+    
+    '''
+    Resolves the collision between two given spheres.
+    TODO: add mass stuff
+    '''
+    @staticmethod
+    def resolve_collision_sphere(sphere_1: Sphere, sphere_2: Sphere) -> None:
+        if sphere_1 is sphere_2: return
+
+        sub = sphere_1.position - sphere_2.position
+        sqrdist = dot(sub, sub)
+        if sqrdist > (sphere_1.radius + sphere_2.radius) ** 2: return
+        
+        dist = sqrt(sqrdist)
+        move_dist = 0.5 * ((sphere_1.radius + sphere_2.radius) - dist)
+        if dist == 0:
+            print("OOPS")
+            direction = vec3(0, 1, 0)
+            dist = 0.01
+        else: direction = sub / dist
+        sphere_1.position += direction * move_dist
+        sphere_2.position -= direction * move_dist
+        
 
 class _DirectionalLightShaderBuffer:
     def __init__(self):
@@ -250,6 +371,65 @@ class Mesh:
         if double_sided: Mesh.add_double_sided(verts)
         
         return Mesh(vertices=verts)
+    
+    @staticmethod
+    def create_sphere(radius : float = 1.0, divisions: int = 32, double_sided: bool = False):
+        verts = []
+        d = (1 / divisions) * 2
+
+        for i in range(divisions):
+            x = (i / divisions - 0.5) * 2.0
+            for j in range(divisions):
+                y = (j / divisions - 0.5) * 2.0
+
+                verts.append(Vertex(vec3(x, y, 1)))
+                verts.append(Vertex(vec3(x + d, y, 1)))
+                verts.append(Vertex(vec3(x, y + d, 1)))
+                verts.append(Vertex(vec3(x + d, y, 1)))
+                verts.append(Vertex(vec3(x + d, y + d, 1)))
+                verts.append(Vertex(vec3(x, y + d, 1)))
+                
+                verts.append(Vertex(vec3(x + d, y, -1)))
+                verts.append(Vertex(vec3(x, y, -1)))
+                verts.append(Vertex(vec3(x, y + d, -1)))
+                verts.append(Vertex(vec3(x + d, y, -1)))
+                verts.append(Vertex(vec3(x, y + d, -1)))
+                verts.append(Vertex(vec3(x + d, y + d, -1)))
+                
+                verts.append(Vertex(vec3(-1, x + d, y)))
+                verts.append(Vertex(vec3(-1, x, y)))
+                verts.append(Vertex(vec3(-1, x, y + d)))
+                verts.append(Vertex(vec3(-1, x + d, y)))
+                verts.append(Vertex(vec3(-1, x, y + d)))
+                verts.append(Vertex(vec3(-1, x + d, y + d)))
+
+                verts.append(Vertex(vec3(1, x, y)))
+                verts.append(Vertex(vec3(1, x + d, y)))
+                verts.append(Vertex(vec3(1, x, y + d)))
+                verts.append(Vertex(vec3(1, x + d, y)))
+                verts.append(Vertex(vec3(1, x + d, y + d)))
+                verts.append(Vertex(vec3(1, x, y + d)))
+
+                verts.append(Vertex(vec3(x + d, 1, y)))
+                verts.append(Vertex(vec3(x, 1, y)))
+                verts.append(Vertex(vec3(x, 1, y + d)))
+                verts.append(Vertex(vec3(x + d, 1, y)))
+                verts.append(Vertex(vec3(x, 1, y + d)))
+                verts.append(Vertex(vec3(x + d, 1, y + d)))
+
+                verts.append(Vertex(vec3(x, -1, y)))
+                verts.append(Vertex(vec3(x + d, -1, y)))
+                verts.append(Vertex(vec3(x, -1, y + d)))
+                verts.append(Vertex(vec3(x + d, -1, y)))
+                verts.append(Vertex(vec3(x + d, -1, y + d)))
+                verts.append(Vertex(vec3(x, -1, y + d)))
+        
+        for v in verts:
+            v.position = normalize(v.position) * radius
+        
+        if double_sided: Mesh.add_double_sided(verts)
+        
+        return Mesh(vertices=verts)
 
 class Drawer:
     def __init__(self):
@@ -301,7 +481,7 @@ class Light:
         self.ambient_strength = 0.15
         self.diffuse_strength = 0.75
         self.specular_strength = 1.0
-        self.specular_exp = 16.0
+        self.specular_exp = 32.0
         self.color = color
         self.activate()
     
@@ -371,7 +551,7 @@ class Camera:
         global _active_camera
         _active_camera = None
     
-    def debug(self, active_key = K_ESCAPE, move_keys = (K_w, K_a, K_s, K_d, K_e, K_q),
+    def control(self, active_key = K_ESCAPE, move_keys = (K_w, K_a, K_s, K_d, K_e, K_q),
               movement_speed = 10, camera_sensitivity = 0.002) -> None:
         if _global_window is None: return
         if _global_window.is_key_pressed(active_key):
@@ -380,6 +560,8 @@ class Camera:
 
         self.yaw += _global_window.mouse_delta.x * camera_sensitivity
         self.pitch -= _global_window.mouse_delta.y * camera_sensitivity
+        if self.pitch > pi() / 2: self.pitch = pi() / 2 - 0.0001
+        if self.pitch < -pi() / 2: self.pitch = -pi() / 2 + 0.0001
 
         movement = vec3(0)
         if _global_window.is_key_down(move_keys[0]): movement += self.get_forward()
