@@ -25,13 +25,17 @@ win = Window(700, 500, max_fps = 60) # Create the 700x500 window.
 
 cam = Camera() # Create a camera
 cam.use() # Activate the camera
+cam.look_at(vec3(1, -1, 1)) # Look at a point
+
 
 light = DirectionalLight() # Create a directional light
 light.intensity = 1.5
 
 cube = Mesh.create_box() # Create a box
-cube.position = vec3(0, 0, 2) # Set the position
+cube.position = vec3(2, -2, 2) # Set the position
 cube.color = vec3(1, 0.1, 0.1) # Red color
+
+win.lock_mouse() # Lock the mouse pointer
 
 def loop():
     cam.control() # First person controller (Press Escape to toggle)
@@ -397,4 +401,5 @@ constructor(position: vec3, radius: float)
     # Resolves the collision between two spheres.
     resolve_collision_sphere(sphere_1: Sphere, sphere_2: Sphere) -> None
     ```
+
 
