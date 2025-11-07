@@ -241,6 +241,12 @@ class Shader:
         )
         return shader
 
+    def set_uniform(name: str, value):
+        pass
+
+    def get_uniform(name: str, value):
+        pass
+
 '''
 Class for strong a vertex three dimensional geometry.
 '''
@@ -255,7 +261,7 @@ A 3D Triangle Mesh.
 class Mesh:
     def __init__(
             self, position: vec3 = vec3(0),  rotation: vec3 = vec3(0), scale: vec3 = vec3(1), color: vec3 = vec3(1),
-            vertices: list[Vertex] = [], shader: Shader = None, preserve_normals = False
+            vertices: list[Vertex] = [], shader: Shader = None, preserve_normals: bool = False
         ):
         global _all_objects
         self.position = position
@@ -318,8 +324,9 @@ class Mesh:
         del self
     
     '''
+    Renders the mesh.
     NOTE: Don't call this function by yourself, unless you know what you're doing.
-    Renders the mesh (only!).
+    Renders the mesh (no lighting!).
     '''
     def render(self) -> None:
         if _active_camera == None:
@@ -348,7 +355,7 @@ class Mesh:
             verts.append(Vertex(vec3(*verts[v * 3 + 1].position.to_tuple())))
 
     '''
-    Create a unit box.
+    Create a unit cube.
     '''
     @staticmethod
     def create_box(double_sided: bool = False):
@@ -419,10 +426,10 @@ class Mesh:
         return Mesh(vertices=verts)
     
     '''
-    Create a sphere.
+    Create a unit sphere.
     '''
     @staticmethod
-    def create_sphere(radius : float = 1.0, divisions: int = 32, double_sided: bool = False):
+    def create_sphere(divisions: int = 32, double_sided: bool = False):
         verts = []
         d = (1 / divisions) * 2
 
@@ -474,8 +481,8 @@ class Mesh:
                 verts.append(Vertex(vec3(x, -1, y + d)))
         
         for v in verts:
-            v.position = normalize(v.position) * radius
         
+            v.position = normalize(v.position)
         if double_sided: Mesh.add_double_sided(verts)
         
         return Mesh(vertices=verts)
@@ -486,8 +493,8 @@ Class for drawing stuff.
 class Drawer:
     def __init__(self):
         self.clear_color = vec4(0.05)
-        self.dlsb = _DirectionalLightShaderBuffer()
-        self.plsb = _PointLightShaderBuffer()
+        self._dlsb = _DirectionalLightShaderBuffer()
+        self._plsb = _PointLightShaderBuffer()
     
     '''
     Draws all the active scene objects, called at the end of the callback loop.
@@ -500,8 +507,8 @@ class Drawer:
     Update the lighting. Called just before rendering.
     '''
     def _update(self) -> None:
-        self.dlsb.update()
-        self.plsb.update()
+        self._dlsb.update()
+        self._plsb.update()
     
     '''
     Clear the screen.
@@ -519,8 +526,8 @@ class Drawer:
     '''
     def draw_mesh(self, mesh: Mesh) -> None:
         if _active_camera is None: return
-        self.dlsb.plz_do_something(mesh.shader)
-        self.plsb.plz_do_something(mesh.shader)
+        self._dlsb.plz_do_something(mesh.shader)
+        self._plsb.plz_do_something(mesh.shader)
 
         mesh.shader.program['uview_pos'] = _active_camera.position.to_tuple()
         mesh.shader.program['uposition'] = mesh.position.to_tuple()
@@ -543,7 +550,7 @@ class Drawer:
         self._set_gl_flag(_ctx.CULL_FACE, flag)
 
     '''
-    Enable/Disable Depth Test.
+    Enable/Disable depth test.
     '''
     def set_depth_test(self, flag: bool) -> None:
         self._set_gl_flag(_ctx.DEPTH_TEST, flag)
@@ -662,14 +669,19 @@ class Camera:
     Control the camera.
     '''
     def control(self, active_key = K_ESCAPE, move_keys = (K_w, K_a, K_s, K_d, K_e, K_q),
-              movement_speed = 10, camera_sensitivity = 0.002) -> None:
+              movement_speed: float = 10.0, camera_sensitivity: float | vec2 = 0.002) -> None:
         if _global_window is None: return
         if _global_window.is_key_pressed(active_key):
             _global_window.unlock_mouse() if _global_window.is_mouse_locked() else _global_window.lock_mouse()
         if not _global_window.is_mouse_locked(): return
 
-        self.yaw += _global_window.mouse_delta.x * camera_sensitivity
-        self.pitch -= _global_window.mouse_delta.y * camera_sensitivity
+        if type(camera_sensitivity) == vec2:
+            self.yaw += _global_window.mouse_delta.x * camera_sensitivity.x
+            self.pitch -= _global_window.mouse_delta.y * camera_sensitivity.y
+        else:
+            self.yaw += _global_window.mouse_delta.x * camera_sensitivity
+            self.pitch -= _global_window.mouse_delta.y * camera_sensitivity
+        
         if self.pitch > pi() / 2: self.pitch = pi() / 2 - 0.0001
         if self.pitch < -pi() / 2: self.pitch = -pi() / 2 + 0.0001
 
@@ -684,7 +696,7 @@ class Camera:
         if movement == vec3(0): return
 
         movement = normalize(movement)
-        self.position += movement * _global_window.deltaTime * movement_speed
+        self.position += movement * _global_window.delta_time * movement_speed
     
 '''
 Creates a window and OpenGL context.
@@ -698,7 +710,7 @@ class Window:
         self._width = width
         self._height = height
         self._title = title
-        self.window = pygame.display.set_mode((width, height), pygame.OPENGL | pygame.DOUBLEBUF | pygame.RESIZABLE)
+        self._window = pygame.display.set_mode((width, height), pygame.OPENGL | pygame.DOUBLEBUF | pygame.RESIZABLE)
         self.aspect_ratio = 1
         pygame.display.set_caption(title)
         _ctx = moderngl.create_context()
@@ -716,8 +728,8 @@ class Window:
         # Render
         self.draw = Drawer()
         self._maxFPS = max_fps
-        self.clock = pygame.time.Clock()
-        self.deltaTime = 1
+        self._clock = pygame.time.Clock()
+        self.delta_time = 1
         self.time_elapsed = 0.0
 
         # Flags
@@ -748,10 +760,10 @@ class Window:
         pygame.display.set_caption(title)
     
     '''
-    Returns the siz eof the window.
+    Returns the size eof the window.
     '''
     def get_size(self) -> tuple[int, int]:
-        return self.window.get_size()
+        return self._window.get_size()
 
     '''
     Returns the title of the window.
@@ -782,14 +794,14 @@ class Window:
     '''
     Returns whether the given key is being pressed.
     '''
-    def is_key_down(self, key) -> None:
+    def is_key_down(self, key) -> bool:
         try: return self._key_state[key]
         except KeyError: return False
     
     '''
     Returns whether the given key is just pressed in the current frame.
     '''
-    def is_key_pressed(self, key) -> None:
+    def is_key_pressed(self, key) -> bool:
         s1 = False
         s2 = False
         try: s1 = self._c_key_state[key]
@@ -801,7 +813,7 @@ class Window:
     '''
     Returns whether the given key is just released in the current frame.
     '''
-    def is_key_released(self, key) -> None:
+    def is_key_released(self, key) -> bool:
         s1 = False
         s2 = False
         try: s1 = self._c_key_state[key]
@@ -813,14 +825,14 @@ class Window:
     '''
     Returns whether the given mouse button is being pressed.
     '''
-    def is_mouse_down(self, button) -> None:
+    def is_mouse_down(self, button) -> bool:
         try: return self._mouse_state[button]
         except KeyError: return False
     
     '''
     Returns whether the given mouse button is just pressed in the current frame.
     '''
-    def is_mouse_pressed(self, button) -> None:
+    def is_mouse_pressed(self, button) -> bool:
         s1 = False
         s2 = False
         try: s1 = self._c_mouse_state[button]
@@ -832,7 +844,7 @@ class Window:
     '''
     Returns whether the given mouse button is just released in the current frame.
     '''
-    def is_mouse_released(self, button) -> None:
+    def is_mouse_released(self, button) -> bool:
         s1 = False
         s2 = False
         try: s1 = self._c_mouse_state[button]
@@ -844,9 +856,9 @@ class Window:
     '''
     Returns the framerate of the window.
     '''
-    def get_fps(self) -> None:
-        if self.deltaTime == 0: return 1000.0
-        return 1.0 / self.deltaTime
+    def get_fps(self) -> float:
+        if self.delta_time == 0: return 1000.0
+        return 1.0 / self.delta_time
     
     '''
     Starts the loop.
@@ -877,10 +889,10 @@ class Window:
             pygame.display.flip()
 
             if self._maxFPS is not None:
-                self.clock.tick(self._maxFPS)
+                self._clock.tick(self._maxFPS)
             end_time_ms = int(round(time.time() * 1000))
-            self.deltaTime = (end_time_ms - start_time_ms) / 1000
-            self.time_elapsed += self.deltaTime
+            self.delta_time = (end_time_ms - start_time_ms) / 1000
+            self.time_elapsed += self.delta_time
 
     '''
     Update stuff.
