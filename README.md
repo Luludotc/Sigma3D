@@ -40,8 +40,6 @@ win.start_loop(loop) # Start the loop
 ```
 
 ## Documentation
-To be made...
-
 ### Window
 ```py
 constructor(width: int, height: int, title: str, max_fps?: int) # max_fps is optional.
@@ -399,3 +397,4 @@ constructor(position: vec3, radius: float)
     # Resolves the collision between two spheres.
     resolve_collision_sphere(sphere_1: Sphere, sphere_2: Sphere) -> None
     ```
+
