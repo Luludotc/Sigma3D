@@ -30,7 +30,7 @@ light = DirectionalLight() # Create a directional light
 light.intensity = 1.5
 
 cube = Mesh.create_box() # Create a box
-cube.position = vec3(0, 0, 2) # Set the position
+cube.position = vec3(0, 0, 3) # Set the position
 cube.color = vec3(1, 0.1, 0.1) # Red color
 
 def loop():
@@ -41,4 +41,5 @@ win.start_loop(loop) # Start the loop
 
 ## Documentation
 To be made...
+
 
