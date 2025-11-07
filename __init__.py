@@ -1,3 +1,4 @@
+from math import atan2
 from os import system
 import time
 import os
@@ -618,6 +619,14 @@ class Camera:
         self.near = near
         self.far = far
         self.up = up
+    
+    def set_direction(self, direction: vec3):
+        d = normalize(direction)
+        self.pitch = asin(d.y)
+        self.yaw = atan2(d.x, d.z)
+
+    def look_at(self, position: vec3):
+        self.set_direction(position - self.position)
     
     '''
     Get the forward direction of camera.
