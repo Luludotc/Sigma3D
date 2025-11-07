@@ -12,7 +12,7 @@ git clone https://github.com/Luludotc/Sigma3D.git ./sigma3d
 Create a python file by the name `main.py` in the same folder as `sigma3d`
 
 
-├── `Sigma3D`\
+├── `sigma3d`\
 │   ├── `__init__.py`\
 │   ├── `LICENSE`\
 │   └── `README.md`\
@@ -41,3 +41,4 @@ win.start_loop(loop) # Start the loop
 
 ## Documentation
 To be made...
+
