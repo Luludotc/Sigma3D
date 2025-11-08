@@ -332,12 +332,12 @@ class Polygon2D:
         return Polygon2D(
             position=position, scale=scale, rotation=rotation, color=color,
             vertices=[
-                Vertex2D(vec2(0, 0)),
-                Vertex2D(vec2(0, 1)),
-                Vertex2D(vec2(1, 0)),
-                Vertex2D(vec2(1, 1)),
-                Vertex2D(vec2(1, 0)),
-                Vertex2D(vec2(0, 1)),
+                Vertex2D(0.5 * vec2(-1, -1)),
+                Vertex2D(0.5 * vec2(-1, 1)),
+                Vertex2D(0.5 * vec2(1, -1)),
+                Vertex2D(0.5 * vec2(1, 1)),
+                Vertex2D(0.5 * vec2(1, -1)),
+                Vertex2D(0.5 * vec2(-1, 1)),
             ]
         )
     
@@ -1220,8 +1220,8 @@ def _init_utils(window: Window) -> None:
 
     void main()
     {
-        vec2 pos = uscale * in_vert;
-        pos = rotate(pos, urotation);
+        vec2 pos = rotate(in_vert, urotation);
+        pos *= uscale;
         pos += uposition;
         
         color = in_col * ucolor;
@@ -1265,8 +1265,8 @@ def _init_utils(window: Window) -> None:
 
     void main()
     {
-        vec2 pos = uscale * in_vert;
-        pos = rotate(pos, urotation);
+        vec2 pos = rotate(in_vert, urotation);
+        pos *= uscale;
         pos += uposition;
         
         color = in_col * ucolor;
