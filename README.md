@@ -25,17 +25,13 @@ win = Window(700, 500, max_fps = 60) # Create the 700x500 window.
 
 cam = Camera() # Create a camera
 cam.use() # Activate the camera
-cam.look_at(vec3(1, -1, 1)) # Look at a point
-
 
 light = DirectionalLight() # Create a directional light
 light.intensity = 1.5
 
 cube = Mesh.create_box() # Create a box
-cube.position = vec3(2, -2, 2) # Set the position
+cube.position = vec3(0, 0, 2) # Set the position
 cube.color = vec3(1, 0.1, 0.1) # Red color
-
-win.lock_mouse() # Lock the mouse pointer
 
 def loop():
     cam.control() # First person controller (Press Escape to toggle)
@@ -44,6 +40,8 @@ win.start_loop(loop) # Start the loop
 ```
 
 ## Documentation
+To be made...
+
 ### Window
 ```py
 constructor(width: int, height: int, title: str, max_fps?: int) # max_fps is optional.
@@ -78,7 +76,7 @@ constructor(width: int, height: int, title: str, max_fps?: int) # max_fps is opt
     set_title(title: str) -> None
     
     # Get the size of the window.
-    get_size() -> tuple[int, int]
+    get_size() -> ivec2
     
     # Get the title of the window.
     get_title() -> str
@@ -195,6 +193,9 @@ constructor(position?: vec3, yaw?: float, pitch?: float, FOV?: float, near?: fla
 
     # Enable/Disable depth test.
     set_depth_test(flag: bool) -> None
+
+    # Enable/Disable alpha blending.
+    set_alpha_blending(flag: bool) -> None
     ```
 
 ### Shader
@@ -214,10 +215,10 @@ constructor(position?: vec3, yaw?: float, pitch?: float, FOV?: float, near?: fla
     load_from_buffer(buffer: str) -> Shader
     
     # Get value of a shader uniform.
-    get_uniform(name: str)
+    get_uniform(name: str) -> None
 
     # Set value of a shader uniform.
-    set_uniform(name: str, value)
+    set_uniform(name: str, value) -> None
     ```
 
 ### Vertex
@@ -233,9 +234,54 @@ constructor(position: vec3, normal?: vec3)
        normal: vec3 # The normal direction of the triangle this vertex belongs to.
     ```
 
+### Vertex2D
+```py
+constructor(position: vec2, color?: vec4)
+```
+
+* Propeties
+
+    ```py
+       position: vec2 # The position of the vertex.
+
+       color: vec4 # Color of the vertex.
+    ```
+
+### Polygon2D
+```py
+constructor(position?: vec2, rotation?: float, scale?: vec2, color?: vec4, vertices: list[Vertex2D], shader?: Shader)
+```
+
+* Properties
+
+    ```py
+    position: vec2 # Position of the polygon.
+    rotation: float # rotation of the polygon.
+    scale: vec2 # Scale of the polygon.
+    color: vec4 # Color of the polygon.
+    vertices: list[Vertex2D] # List of vertices of the polygon.
+    shader: Shader # Shader program to use for rendering of the polygon.
+    ```
+
+* Methods
+
+    ```py
+    # Update the shader (should be called after modifying the polygon).
+    refresh() -> None
+
+    # Render the polygon.
+    render() -> None
+
+    # (static method) Create a rectangle polygon.
+    Polygon2D.create_rectangle(position?: vec2, scale?: vec2, rotation?: float, color?: vec4) -> Polygon2D
+
+    # (static method) Create a circle polygon.
+    Polygon2D.create_circle(position?: vec2, radius?: float, color?: vec4) -> Polygon2D
+    ```
+
 ### Mesh
 ```py
-constructor(position?: vec3, rotation?: vec3, scale?: vec3, color?: vec4, vertices?: list[Vertex], shader?: Shader, preserve_normals?: bool)
+constructor(position?: vec3, rotation?: vec3, scale?: vec3, color?: vec3, vertices?: list[Vertex], shader?: Shader, preserve_normals?: bool)
 ```
 
 * Properties
@@ -247,7 +293,7 @@ constructor(position?: vec3, rotation?: vec3, scale?: vec3, color?: vec4, vertic
 
     scale: vec3 # Scale of the mesh.
 
-    color: vec4 # Color of the mesh.
+    color: vec3 # Color of the mesh.
 
     vertices: list[Vertex] # Vertices of the mesh.
 
@@ -271,19 +317,19 @@ constructor(position?: vec3, rotation?: vec3, scale?: vec3, color?: vec4, vertic
     render() -> None
 
     # (static method) Takes a list of vertices, copies it again with inverted normals to create a "back side".
-    Mesh.add_double_sided(verts: list[Vertex])
+    Mesh.add_double_sided(verts: list[Vertex]) -> list[Vertex]
 
     # (static method) Creates a unit cube.
-    Mesh.create_box(double_sided?: bool)
+    Mesh.create_box(double_sided?: bool) -> Mesh
 
     # (static method) Creates a unit quad.
-    Mesh.create_quad(double_sided?: bool)
+    Mesh.create_quad(double_sided?: bool) -> Mesh
 
     # (static method) Creates a unit disc (circle).
-    Mesh.create_disc(double_sided?: bool)
+    Mesh.create_disc(double_sided?: bool) -> Mesh
 
     # (static method) Creates a unit sphere.
-    Mesh.create_sphere(double_sided?: bool)
+    Mesh.create_sphere(double_sided?: bool) -> Mesh
     ```
 
 ### Light
@@ -401,5 +447,3 @@ constructor(position: vec3, radius: float)
     # Resolves the collision between two spheres.
     resolve_collision_sphere(sphere_1: Sphere, sphere_2: Sphere) -> None
     ```
-
-
