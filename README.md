@@ -1,5 +1,5 @@
 # Sigma3D
-* Sigma3D is a basic 3D renderer in made in Python with possible support for physics (hopefully).
+* Sigma3D is a basic 3D renderer in made in Python with possible support for physics in future (hopefully).
 
 ## Installation
 
@@ -472,3 +472,4 @@ constructor(position: vec3, radius: float)
     # Resolves the collision between two spheres.
     resolve_collision_sphere(sphere_1: Sphere, sphere_2: Sphere) -> None
     ```
+
