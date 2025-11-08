@@ -115,6 +115,31 @@ constructor(width: int, height: int, title: str, max_fps?: int) # max_fps is opt
     start_loop(callback: callable) -> None
     ```
 
+### Camera2D
+NOTE: Camera2D is buggy!
+
+```py
+constructor(position?: vec2, zoom?: float, rotation?: float)
+```
+
+* Properties
+
+    ```py
+    position: vec2 # Position of the Camera2D.
+    zoom: float # Zoom-in Scale.
+    rotation: float # Rotation of the camera.
+    ```
+
+* Members
+
+    ```py
+    # Activate the Camera2D
+    use() -> None
+
+    # (static method) Deactivate the currently active Camera2D
+    Camera2D.use_none() -> None
+    ```
+
 ### Camera
 ```py
 constructor(position?: vec3, yaw?: float, pitch?: float, FOV?: float, near?: flaot, far?: float, up?: vec3)
