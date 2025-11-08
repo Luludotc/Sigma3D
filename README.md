@@ -18,6 +18,8 @@ Create a python file by the name `main.py` in the same folder as `sigma3d`
 │   └── `README.md`\
 └── `main.py`
 
+Paste the following code in `main.py` and play around!
+
 ```py
 from sigma3d import *
 
@@ -472,4 +474,5 @@ constructor(position: vec3, radius: float)
     # Resolves the collision between two spheres.
     resolve_collision_sphere(sphere_1: Sphere, sphere_2: Sphere) -> None
     ```
+
 
