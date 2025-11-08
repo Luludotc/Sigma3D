@@ -112,7 +112,7 @@ constructor(width: int, height: int, title?: str, max_fps?: int) # title and max
     # Return whether the given mouse button is released in the current frame.
     is_mouse_released(button) -> bool
     
-    # Start the loop, calls the given callback function once every frame.
+    # Start the loop, calls `callback` function once every frame, calls `draw_ui` function after 3D rendering for drawing UI objects.
     start_loop(callback: callable, draw_ui?: callable) -> None
     ```
 
@@ -473,6 +473,7 @@ constructor(position: vec3, radius: float)
     # Resolves the collision between two spheres.
     resolve_collision_sphere(sphere_1: Sphere, sphere_2: Sphere) -> None
     ```
+
 
 
 
