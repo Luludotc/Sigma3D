@@ -359,7 +359,7 @@ constructor(position?: vec3, rotation?: vec3, scale?: vec3, color?: vec3, vertic
     ```
 
 ### Light
-NOTE: This is a abstract class. Don't instantiate it.
+NOTE: This is an abstract class. Don't instantiate it.
 
 ```py
 constructor(color: vec3)
@@ -473,6 +473,7 @@ constructor(position: vec3, radius: float)
     # Resolves the collision between two spheres.
     resolve_collision_sphere(sphere_1: Sphere, sphere_2: Sphere) -> None
     ```
+
 
 
 
