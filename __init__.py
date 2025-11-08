@@ -41,6 +41,9 @@ _global_window = None
 _active_camera = None
 _active_lights = []
 _all_objects = []
+_active_ui_camera = None
+_default_poly_shader = None
+_default_circle_shader = None
 
 '''
 Provides some basic methods to help in physics calculations.
@@ -51,8 +54,8 @@ class Physics:
     '''
     class Point:
         def __init__(self, position: vec3):
-            self.position = position
-            self._last_position = position
+            self.position = vec3(*position.to_tuple())
+            self._last_position = vec3(*position.to_tuple())
             self.acceleration = vec3(0)
         
         '''
@@ -249,13 +252,113 @@ class Shader:
         pass
 
 '''
-Class for strong a vertex three dimensional geometry.
+Class for storing a vertex in three dimensional geometry.
 '''
 class Vertex:
     def __init__(self, position: vec3, normal: vec3 = vec3(0)):
         self.position = position
         self.normal = normal
 
+'''
+Class for storing a vertex in two dimensional geometry.
+'''
+class Vertex2D:
+    def __init__(self, position: vec2, color: vec4 = vec4(1)):
+        self.position = position
+        self.color = color
+
+'''
+A 2D mesh.
+'''
+class Polygon2D:
+    def __init__(
+                self, position: vec2 = vec2(0), rotation: float = 0, scale: vec2 = vec2(1), color: vec4 = vec4(1),
+                 vertices: list[Vertex2D] = [], shader: Shader = None
+            ):
+            self.position = position
+            self.rotation = rotation
+            self.scale = scale
+            self.color = color
+            self.vertices = vertices
+            self._vbo = None
+            self._vao = None
+            self.shader = _default_poly_shader if shader is None else shader
+
+            self.refresh()
+        
+    '''
+    Update the shader (should be called after modifying the polygon).
+    '''
+    def refresh(self) -> None:
+        if len(self.vertices) == 0: return
+
+        verts = []
+        for i in range(len(self.vertices)):
+            verts.append(self.vertices[i].position.x)
+            verts.append(self.vertices[i].position.y)
+            verts.append(self.vertices[i].color.x)
+            verts.append(self.vertices[i].color.y)
+            verts.append(self.vertices[i].color.z)
+            verts.append(self.vertices[i].color.w)
+
+        self._vert = np.array(verts, dtype='f4')
+        self._vbo = _ctx.buffer(self._vert.tobytes())
+        self._vao = _ctx.vertex_array(self.shader.program, [(self._vbo, '2f 4f', 'in_vert', 'in_col')])
+    
+    '''
+    Renders the polygon.
+    '''
+    def render(self) -> None:
+        if _global_window is None: 
+            raise "Inactive window: No active window to render to."
+        if _active_ui_camera == None:
+            raise "Inactive UI camera: Cannot render an object when no camera is active."
+
+        ws = 2.0 / vec2(_global_window.get_size())
+        ws *= vec2(1, -1)
+        wo = vec2(-1, 1)
+        
+        self.shader.program['uposition'] = ((self.position + _active_ui_camera.position) * ws + wo).to_tuple()
+        self.shader.program['uscale'] = (self.scale * _active_ui_camera.zoom * ws).to_tuple()
+        self.shader.program['urotation'] = self.rotation + _active_ui_camera.rotation
+        self.shader.program['ucolor'] = self.color.to_tuple()
+        self._vao.render(moderngl.TRIANGLES)
+    
+    '''
+    Create a rectangle.
+    '''
+    @staticmethod
+    def create_rectangle(position: vec2 = vec2(0), scale:vec2 = vec2(1), rotation: float = 0, color: vec4 = vec4(1)):
+        return Polygon2D(
+            position=position, scale=scale, rotation=rotation, color=color,
+            vertices=[
+                Vertex2D(vec2(0, 0)),
+                Vertex2D(vec2(0, 1)),
+                Vertex2D(vec2(1, 0)),
+                Vertex2D(vec2(1, 1)),
+                Vertex2D(vec2(1, 0)),
+                Vertex2D(vec2(0, 1)),
+            ]
+        )
+    
+    '''
+    Create a circle.
+    '''
+    @staticmethod
+    def create_circle(position: vec2 = vec2(0), radius:float = 1, color: vec4 = vec4(1)):
+        return Polygon2D(
+            position=position, scale=vec2(radius), rotation=0, color=color,
+            shader=_default_circle_shader,
+            vertices=[
+                Vertex2D(vec2(-1, -1)),
+                Vertex2D(vec2(-1, 1)),
+                Vertex2D(vec2(1, -1)),
+                Vertex2D(vec2(1, 1)),
+                Vertex2D(vec2(1, -1)),
+                Vertex2D(vec2(-1, 1)),
+            ],
+        )
+        
 '''
 A 3D Triangle Mesh.
 '''
@@ -496,7 +599,8 @@ class Drawer:
         self.clear_color = vec4(0.05)
         self._dlsb = _DirectionalLightShaderBuffer()
         self._plsb = _PointLightShaderBuffer()
-    
+        _ctx.depth_func = "<="
+
     '''
     Draws all the active scene objects, called at the end of the callback loop.
     '''
@@ -555,6 +659,12 @@ class Drawer:
     '''
     def set_depth_test(self, flag: bool) -> None:
         self._set_gl_flag(_ctx.DEPTH_TEST, flag)
+
+    '''
+    Enable/Disable alpha blending.
+    '''
+    def set_alpha_blending(self, flag: bool) -> None:
+        self._set_gl_flag(_ctx.BLEND, flag)
     
 '''
 Base class for light.
@@ -654,7 +764,7 @@ class Camera:
     '''
     Get the Viewport-Projection matrix for the camrea.
     '''
-    def get_vp_matrix(self) -> mat4:
+    def get_vp_matrix(self) -> mat4x4:
         view = lookAt(self.position, self.position + self.get_forward(), self.up)
         proj = perspective(self.FOV, _global_window.aspect_ratio, self.near, self.far)
         return proj * view
@@ -667,7 +777,7 @@ class Camera:
         _active_camera = self
     
     '''
-    Deactivate the current active camera.
+    Deactivate the currently active camera.
     '''
     @staticmethod
     def use_none() -> None:
@@ -706,6 +816,30 @@ class Camera:
 
         movement = normalize(movement)
         self.position += movement * _global_window.delta_time * movement_speed
+
+'''
+A basic camera class for 2D rendering.
+'''
+class Camera2D:
+    def __init__(self, position: vec2 = vec2(0), zoom: float = 1, rotation: float = 0):
+        self.position = position
+        self.zoom = zoom
+        self.rotation = rotation
+    
+    '''
+    Activate the Camera2D
+    '''
+    def use(self):
+        global _active_ui_camera
+        _active_ui_camera = self
+    
+    '''
+    Deactivate the currently active Camera2D
+    '''
+    @staticmethod
+    def use_none(self):
+        global _active_ui_camera
+        _active_ui_camera = None
     
 '''
 Creates a window and OpenGL context.
@@ -744,6 +878,7 @@ class Window:
         # Flags
         self.draw.set_cull_face(True)
         self.draw.set_depth_test(True)
+        self.draw.set_alpha_blending(True)
 
         _init_utils(self)
 
@@ -771,8 +906,8 @@ class Window:
     '''
     Returns the size eof the window.
     '''
-    def get_size(self) -> tuple[int, int]:
-        return self._window.get_size()
+    def get_size(self) -> ivec2:
+        return ivec2(*self._window.get_size())
 
     '''
     Returns the title of the window.
@@ -872,7 +1007,7 @@ class Window:
     '''
     Starts the loop.
     '''
-    def start_loop(self, callback: callable) -> None:
+    def start_loop(self, callback: callable, draw_ui: callable = lambda: None) -> None:
         while True:
             start_time_ms = int(round(time.time() * 1000))
             for event in pygame.event.get():
@@ -895,6 +1030,9 @@ class Window:
             self.draw._update()
             self.draw.clear()
             self.draw._draw_all()
+            self.draw.set_depth_test(False)
+            draw_ui()
+            self.draw.set_depth_test(True)
             pygame.display.flip()
 
             if self._maxFPS is not None:
@@ -924,7 +1062,8 @@ class Window:
 Initialize shaders and stuff.
 '''
 def _init_utils(window: Window) -> None:
-    global _basic_shader, _global_window
+    global _basic_shader, _global_window, _active_ui_camera, _default_poly_shader, _default_circle_shader
+
     _basic_shader = Shader().load_from_buffer(
     '''
     #vertex
@@ -1058,4 +1197,96 @@ def _init_utils(window: Window) -> None:
     '''
     )
 
+    _default_poly_shader = Shader().load_from_buffer(
+    '''
+    #vertex
+    #version 430 core
+    layout(location = 0) in vec2 in_vert;
+    layout(location = 1) in vec4 in_col;
+
+    uniform vec2 uposition;
+    uniform float urotation;
+    uniform vec2 uscale;
+    uniform vec4 ucolor;
+
+    out vec4 color;
+
+    vec2 rotate(vec2 v, float a) {
+        float s = sin(a);
+        float c = cos(a);
+        mat2 m = mat2(c, s, -s, c);
+        return m * v;
+    }
+
+    void main()
+    {
+        vec2 pos = uscale * in_vert;
+        pos = rotate(pos, urotation);
+        pos += uposition;
+        
+        color = in_col * ucolor;
+        gl_Position = vec4(pos, 0.0, 1.0);
+    }
+
+    #fragment
+    #version 430 core
+    layout(location = 0) out vec4 f_color;
+
+    in vec4 color;    
+
+    void main()
+    {
+        f_color = color;
+    }
+    '''
+    )
+
+    _default_circle_shader = Shader().load_from_buffer(
+    '''
+    #vertex
+    #version 430 core
+    layout(location = 0) in vec2 in_vert;
+    layout(location = 1) in vec4 in_col;
+
+    uniform vec2 uposition;
+    uniform float urotation;
+    uniform vec2 uscale;
+    uniform vec4 ucolor;
+
+    out vec4 color;
+    out vec2 norm_pos;
+
+    vec2 rotate(vec2 v, float a) {
+        float s = sin(a);
+        float c = cos(a);
+        mat2 m = mat2(c, s, -s, c);
+        return m * v;
+    }
+
+    void main()
+    {
+        vec2 pos = uscale * in_vert;
+        pos = rotate(pos, urotation);
+        pos += uposition;
+        
+        color = in_col * ucolor;
+        norm_pos = in_vert;
+        gl_Position = vec4(pos, 0.0, 1.0);
+    }
+
+    #fragment
+    #version 430 core
+    layout(location = 0) out vec4 f_color;
+
+    in vec4 color;
+    in vec2 norm_pos;
+
+    void main()
+    {
+        f_color = mix(color, vec4(0), pow(dot(norm_pos, norm_pos), 75));
+    }
+    '''
+    )
+
     _global_window = window
+    _active_ui_camera = Camera2D()
