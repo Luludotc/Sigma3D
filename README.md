@@ -113,7 +113,7 @@ constructor(width: int, height: int, title?: str, max_fps?: int) # title and max
     is_mouse_released(button) -> bool
     
     # Start the loop, calls the given callback function once every frame.
-    start_loop(callback: callable) -> None
+    start_loop(callback: callable, draw_ui?: callable) -> None
     ```
 
 ### Camera2D
@@ -473,6 +473,7 @@ constructor(position: vec3, radius: float)
     # Resolves the collision between two spheres.
     resolve_collision_sphere(sphere_1: Sphere, sphere_2: Sphere) -> None
     ```
+
 
 
 
