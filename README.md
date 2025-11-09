@@ -117,8 +117,6 @@ constructor(width: int, height: int, title?: str, max_fps?: int) # title and max
     ```
 
 ### Camera2D
-NOTE: Camera2D is buggy!
-
 ```py
 constructor(position?: vec2, zoom?: float, rotation?: float)
 ```
