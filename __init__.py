@@ -44,65 +44,40 @@ _all_objects = []
 _active_ui_camera = None
 _default_poly_shader = None
 _default_circle_shader = None
+default_shaders = {}
 
 '''
 Provides some basic methods to help in physics calculations.
 '''
 class Physics:
     '''
-    A point object, uses verlet's integration for simulating dynamics.
+    A point object.
     '''
     class Point:
-        def __init__(self, position: vec3):
-            self.position = vec3(*position.to_tuple())
-            self._last_position = vec3(*position.to_tuple())
-            self.acceleration = vec3(0)
+        def __init__(self, position: vec3 | vec2):
+            self.position = type(position)(*position.to_tuple())
+            self.velocity = type(position)(0)
+            self.acceleration = type(position)(0)
         
         '''
         Step forward in the simulation.
         '''
         def step(self, delta_time = 1 / 60) -> None:
-            velocity = self.get_velocity()
-            self._last_position = vec3(*self.position.to_tuple())
-            self.position += velocity + self.acceleration * delta_time
-            self.acceleration = vec3(0)
-        
-        '''
-        Set the position.
-        '''
-        def set_position(self, position: vec3) -> None:
-            self.position = vec3(*position.to_tuple())
-            self._last_position = vec3(*position.to_tuple())
-        
-        '''
-        Set the velocity.
-        '''
-        def set_velocity(self, velocity: vec3) -> None:
-            self._last_position = vec3(*(self.position - velocity).to_tuple())
-        
-        '''
-        Returns the velocity.
-        '''
-        def get_velocity(self) -> vec3:
-            return self.position - self._last_position
-        
-        '''
-        Set the acceleration.
-        '''
-        def set_acceleration(self, acceleration: vec3) -> None:
-            self.acceleration = acceleration
+            self.position += self.velocity * delta_time
+            self.velocity += self.acceleration * delta_time
+            self.acceleration = type(self.position)(0)
         
         '''
         Accelerate the object.
         '''
-        def accelerate(self, acceleration: vec3) -> None:
+        def accelerate(self, acceleration: vec3 | vec2) -> None:
             self.acceleration += acceleration
     
     '''
-    A sphere object.
+    An n-sphere object.
     '''
-    class Sphere(Point):
-        def __init__(self, position: vec3, radius: float):
+    class Ball(Point):
+        def __init__(self, position: vec3 | vec2, radius: float):
             super().__init__(position)
             self.radius = radius
     
@@ -110,31 +85,32 @@ class Physics:
     Returns whether two given spheres collide.
     '''
     @staticmethod
-    def check_collision_sphere(sphere_1: Sphere, sphere_2: Sphere) -> bool:
-        sub = sphere_1.position - sphere_2.position
-        return dot(sub, sub) >= (sphere_1.radius + sphere_2.radius) ** 2
+    def check_collision_balls(ball_1: Ball, ball_2: Ball) -> bool:
+        sub = ball_1.position - ball_2.position
+        return dot(sub, sub) >= (ball_1.radius + ball_2.radius) ** 2
     
     '''
     Resolves the collision between two given spheres.
     TODO: add mass stuff
     '''
     @staticmethod
-    def resolve_collision_sphere(sphere_1: Sphere, sphere_2: Sphere) -> None:
-        if sphere_1 is sphere_2: return
+    def resolve_collision_balls(ball_1: Ball, ball_2: Ball) -> None:
+        if ball_1 is ball_2: return
 
-        sub = sphere_1.position - sphere_2.position
+        sub = ball_1.position - ball_2.position
         sqrdist = dot(sub, sub)
-        if sqrdist > (sphere_1.radius + sphere_2.radius) ** 2: return
+        if sqrdist > (ball_1.radius + ball_2.radius) ** 2: return
         
         dist = sqrt(sqrdist)
-        move_dist = 0.5 * ((sphere_1.radius + sphere_2.radius) - dist)
+        move_dist = 0.5 * ((ball_1.radius + ball_2.radius) - dist)
         if dist == 0:
-            print("OOPS")
+            # print("OOPS")
             direction = vec3(0, 1, 0)
             dist = 0.01
+        
         else: direction = sub / dist
-        sphere_1.position += direction * move_dist
-        sphere_2.position -= direction * move_dist
+        ball_1.position += direction * move_dist
+        ball_2.position -= direction * move_dist
         
 
 '''
@@ -245,10 +221,19 @@ class Shader:
         )
         return shader
 
+    '''
+    Load shader from vertex shader & fragment shader
+    '''
+    @staticmethod 
+    def load_from_buffer2(vertex:str, fragment:str):
+        return Shader.load_from_buffer(
+            "#vertex\n" + vertex + '\n#fragment\n' + fragment
+        )
+
     def set_uniform(name: str, value):
         pass
 
-    def get_uniform(name: str, value):
+    def get_uniform(name: str) -> float | int | vec2 | vec3 | vec4 | ivec2 | ivec3 | ivec4 | uvec2 | uvec3 | uvec4:
         pass
 
 '''
@@ -317,11 +302,15 @@ class Polygon2D:
         ws = 2.0 / vec2(_global_window.get_size())
         ws *= vec2(1, -1)
         wo = vec2(-1, 1)
+
+        transformed_pos = rotate2d(self.position - _active_ui_camera.position - _global_window.get_size() * 0.5, _active_ui_camera.rotation)\
+                                * _active_ui_camera.zoom + _global_window.get_size() * 0.5
         
-        self.shader.program['uposition'] = ((self.position + _active_ui_camera.position) * ws + wo).to_tuple()
-        self.shader.program['uscale'] = (self.scale * _active_ui_camera.zoom * ws).to_tuple()
-        self.shader.program['urotation'] = self.rotation + _active_ui_camera.rotation
+        self.shader.program['uposition'] = (transformed_pos * ws + wo).to_tuple()
+        self.shader.program['uscale'] = (self.scale * _active_ui_camera.zoom * ws * vec2(1, 1.0 / _global_window.aspect_ratio)).to_tuple()
+        self.shader.program['urotation'] = self.rotation - _active_ui_camera.rotation
         self.shader.program['ucolor'] = self.color.to_tuple()
+        self.shader.program['uaspect_ratio'] = _global_window.aspect_ratio
         self._vao.render(moderngl.TRIANGLES)
     
     '''
@@ -906,8 +895,8 @@ class Window:
     '''
     Returns the size eof the window.
     '''
-    def get_size(self) -> ivec2:
-        return ivec2(*self._window.get_size())
+    def get_size(self) -> vec2:
+        return vec2(self._width, self._height)
 
     '''
     Returns the title of the window.
@@ -1007,7 +996,7 @@ class Window:
     '''
     Starts the loop.
     '''
-    def start_loop(self, callback: callable, draw_ui: callable = lambda: None) -> None:
+    def start_loop(self, callback: callable = lambda: None, draw_ui: callable = lambda: None) -> None:
         while True:
             start_time_ms = int(round(time.time() * 1000))
             for event in pygame.event.get():
@@ -1045,8 +1034,8 @@ class Window:
     Update stuff.
     '''
     def _update(self) -> None:
-        self.aspect_ratio = self._width / self._height
-        _ctx.viewport = 0, 0, self._width, self._height
+        self.aspect_ratio = self.get_size().x / self.get_size().y
+        _ctx.viewport = 0, 0, self.get_size().x, self.get_size().y
 
         self._p_key_state = self._c_key_state.copy()
         self._c_key_state = self._key_state.copy()
@@ -1056,17 +1045,16 @@ class Window:
         self.mouse_delta = vec2(*pygame.mouse.get_rel())
 
         if pygame.event.get_grab():
-            pygame.mouse.set_pos(self._width / 2, self._height / 2)
+            pygame.mouse.set_pos(self.get_size().x / 2, self.get_size().y / 2)
 
 '''
 Initialize shaders and stuff.
 '''
 def _init_utils(window: Window) -> None:
-    global _basic_shader, _global_window, _active_ui_camera, _default_poly_shader, _default_circle_shader
+    global default_shaders, _basic_shader, _global_window, _active_ui_camera,\
+            _default_poly_shader, _default_circle_shader
 
-    _basic_shader = Shader().load_from_buffer(
-    '''
-    #vertex
+    default_shaders['phong.vertex'] = '''
     #version 430 core
     layout(location = 0) in vec3 in_vert;
     layout(location = 1) in vec3 in_norm;
@@ -1111,8 +1099,9 @@ def _init_utils(window: Window) -> None:
         frag_pos = pos;
         gl_Position = uMVP * vec4(pos, 1.0);
     }
+    '''
 
-    #fragment
+    default_shaders['phong.fragment'] = '''
     #version 430 core
     layout(location = 0) out vec4 f_color;
     layout(std430, binding = 0) /*kaota*/ readonly buffer _
@@ -1195,11 +1184,8 @@ def _init_utils(window: Window) -> None:
         f_color = vec4(light * ucolor, 1);
     }
     '''
-    )
 
-    _default_poly_shader = Shader().load_from_buffer(
-    '''
-    #vertex
+    default_shaders['polygon.vertex'] = '''
     #version 430 core
     layout(location = 0) in vec2 in_vert;
     layout(location = 1) in vec4 in_col;
@@ -1208,50 +1194,7 @@ def _init_utils(window: Window) -> None:
     uniform float urotation;
     uniform vec2 uscale;
     uniform vec4 ucolor;
-
-    out vec4 color;
-
-    vec2 rotate(vec2 v, float a) {
-        float s = sin(a);
-        float c = cos(a);
-        mat2 m = mat2(c, s, -s, c);
-        return m * v;
-    }
-
-    void main()
-    {
-        vec2 pos = rotate(in_vert, urotation);
-        pos *= uscale;
-        pos += uposition;
-        
-        color = in_col * ucolor;
-        gl_Position = vec4(pos, 0.0, 1.0);
-    }
-
-    #fragment
-    #version 430 core
-    layout(location = 0) out vec4 f_color;
-
-    in vec4 color;    
-
-    void main()
-    {
-        f_color = color;
-    }
-    '''
-    )
-
-    _default_circle_shader = Shader().load_from_buffer(
-    '''
-    #vertex
-    #version 430 core
-    layout(location = 0) in vec2 in_vert;
-    layout(location = 1) in vec4 in_col;
-
-    uniform vec2 uposition;
-    uniform float urotation;
-    uniform vec2 uscale;
-    uniform vec4 ucolor;
+    uniform float uaspect_ratio;
 
     out vec4 color;
     out vec2 norm_pos;
@@ -1265,16 +1208,30 @@ def _init_utils(window: Window) -> None:
 
     void main()
     {
-        vec2 pos = rotate(in_vert, urotation);
-        pos *= uscale;
+        vec2 pos = in_vert * uscale;
+        pos = rotate(pos, urotation);
+        pos.y *= uaspect_ratio;
         pos += uposition;
         
         color = in_col * ucolor;
         norm_pos = in_vert;
         gl_Position = vec4(pos, 0.0, 1.0);
     }
+    '''
 
-    #fragment
+    default_shaders['polygon.fragment'] = '''
+    #version 430 core
+    layout(location = 0) out vec4 f_color;
+
+    in vec4 color;    
+
+    void main()
+    {
+        f_color = color;
+    }
+    '''
+
+    default_shaders['polygon.circle.fragment'] = '''
     #version 430 core
     layout(location = 0) out vec4 f_color;
 
@@ -1286,7 +1243,14 @@ def _init_utils(window: Window) -> None:
         f_color = mix(color, vec4(0), pow(dot(norm_pos, norm_pos), 75));
     }
     '''
-    )
+
+    _basic_shader = Shader().load_from_buffer2(default_shaders['phong.vertex'], default_shaders['phong.fragment'])
+    _default_poly_shader = Shader().load_from_buffer2(default_shaders['polygon.vertex'], default_shaders['polygon.fragment'])
+    _default_circle_shader = Shader().load_from_buffer2(default_shaders['polygon.vertex'], default_shaders['polygon.circle.fragment'])
 
     _global_window = window
     _active_ui_camera = Camera2D()
+
+def rotate2d(vector: vec2, angle: float) -> vec2:
+    angle = atan2(vector.y, vector.x) + angle
+    return vec2(cos(angle), sin(angle)) * length(vector)
