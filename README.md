@@ -77,7 +77,7 @@ constructor(width: int, height: int, title?: str, max_fps?: int) # title and max
     set_title(title: str) -> None
     
     # Get the size of the window.
-    get_size() -> ivec2
+    get_size() -> vec2
     
     # Get the title of the window.
     get_title() -> str
@@ -113,7 +113,7 @@ constructor(width: int, height: int, title?: str, max_fps?: int) # title and max
     is_mouse_released(button) -> bool
     
     # Start the loop, calls `callback` function once every frame, calls `draw_ui` function after 3D rendering for drawing UI objects.
-    start_loop(callback: callable, draw_ui?: callable) -> None
+    start_loop(callback?: callable, draw_ui?: callable) -> None
     ```
 
 ### Camera2D
@@ -238,13 +238,10 @@ constructor(position?: vec3, yaw?: float, pitch?: float, FOV?: float, near?: fla
     Shader.load(path: str) -> Shader
 
     # (static method) load a shader program from a string buffer.
-    load_from_buffer(buffer: str) -> Shader
-    
-    # Get value of a shader uniform.
-    get_uniform(name: str) -> None
+    Shader.load_from_buffer(buffer: str) -> Shader
 
-    # Set value of a shader uniform.
-    set_uniform(name: str, value) -> None
+    # (static method) load a shader program from a vertex shader and a fragment shader.
+    Shader.load_from_buffer2(vertex: str, fragment: str) -> Shader
     ```
 
 ### Vertex
@@ -417,15 +414,15 @@ constructor(color: vec3, position?: vec3)
 
 ### Physics.Point
 ```py
-constructor(position: vec3)
+constructor(position: vec3 | vec2)
 ```
 
 * Properties
 
     ```py
-    position: vec3 # Position of the point.
-
-    acceleration: vec3 # Acceleration of the point.
+    position: vec3 | vec2 # Position of the point.
+    velocity: vec3 | vec2 # Velocity of the point.
+    acceleration: vec3 | vec2 # Acceleration of the point.
     ```
 
 * Methods
@@ -434,32 +431,20 @@ constructor(position: vec3)
     # Calculate position for the next frame.
     step(delta_time?: float) -> None
 
-    # Set the position (resets velocity!).
-    set_position(position: vec3) -> None
-
-    # Set the velocity.
-    set_velocity(velocity: vec3) -> None
-
-    # Get the velocity.
-    get_velocity() -> vec3
-
-    # Set the acceleration.
-    set_acceleration(acceleration: vec3) -> None
-
     # Add acceleration.
-    accelerate(acceleration: vec3) -> None
+    accelerate(acceleration: vec3 | vec2) -> None
     ```
 
-### Physics.Sphere
+### Physics.Ball
 ```py
 # Inherits from Physics.Point.
-constructor(position: vec3, radius: float)
+constructor(position: vec3 | vec2, radius: float)
 ```
 
 * Properties (+ all from Physics.Point)
 
     ```py
-    radius: vec3 # Radius of the sphere
+    radius: float # Radius of the sphere
     ```
 
 ### Physics
@@ -467,16 +452,16 @@ constructor(position: vec3, radius: float)
 * Methods
 
     ```py
-    # Returns whether the two given sphere collide or not.
-    check_collision_sphere(sphere_1: Sphere, sphere_2: Sphere) -> bool
+    # Returns whether the two given Physics.Ball collide or not.
+    check_collision_balls(ball_1: Physics.Ball, ball_2: Physics.Ball) -> bool
 
-    # Resolves the collision between two spheres.
-    resolve_collision_sphere(sphere_1: Sphere, sphere_2: Sphere) -> None
+    # Resolves the collision between two Physics.Ball.
+    resolve_collision_balls(ball_1: Physics.Ball, ball_2: Physics.Ball) -> None
     ```
 
+## Miscellaneous stuff
 
-
-
-
-
-
+```py
+# Rotate a vec2 by specified angle.
+rotate2d(vector: vec2, angle: float) -> vec2
+```
