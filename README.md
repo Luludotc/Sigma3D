@@ -1,5 +1,5 @@
 # Sigma3D
-* Sigma3D is a basic 3D renderer in made in Python with possible support for physics in future (hopefully).
+* Sigma3D is a basic 3D Game Engine in made in Python with possible support for physics in future (hopefully).
 
 ## Installation
 
@@ -23,22 +23,37 @@ Paste the following code in `main.py` and play around!
 ```py
 from sigma3d import *
 
-win = Window(700, 500, max_fps = 60) # Create the 700x500 window.
+win = Window(720, 480, max_fps=60) # Create a window of 720x480 pixels.
 
-cam = Camera() # Create a camera
-cam.use() # Activate the camera
+# Create a camera entity.
+camera_entity = Entity() # Create an entity.
+camera_entity.add_component(Transform) # Add a Transform component, for position, rotation & scale.
+camera_entity.add_component(Camera)    # Camera component, to see stuff.
+camera_entity.get_component(Camera).use() # Enable the camera
 
-light = DirectionalLight() # Create a directional light
-light.intensity = 1.5
 
-cube = Mesh.create_box() # Create a box
-cube.position = vec3(0, 0, 2) # Set the position
-cube.color = vec3(1, 0.1, 0.1) # Red color
+# Alternative way to add components.
+light = Entity([
+    Transform(rotation=vec3(radians(-70), 0, radians(45))), # Rotation in XYZ axis
+    DirectionalLight(color=vec3(1.0, 1.0, 0.8))  # To simulate sunlight, RGB colors in [0 -> 1] range.
+])
 
-def loop():
-    cam.control() # First person controller (Press Escape to toggle)
+# A sphere mesh.
+sphere = Entity([
+    Transform(position=vec3(0, 0, 5)),
+    MeshRenderer()
+])
 
-win.start_loop(loop) # Start the loop
+# Alternative to Entity.get_component()
+sphere.mesh_renderer.mesh = Mesh.create_sphere(divisions=64) # Higher divisions = high quality sphere, takes time to load.
+sphere.mesh_renderer.material = PhongMaterial(color=vec3(1)) # A material describes how a mesh should be rendered.
+
+# Called once every frame
+def my_loop():
+    camera_entity.camera.control() # A first-person controller (Press Escape to toggle focus)
+
+# Start the window loop.
+win.start_loop(my_loop)
 ```
 
 ## Documentation
@@ -57,7 +72,9 @@ constructor(width: int, height: int, title?: str, max_fps?: int) # title and max
 
     Window.mouse_delta: vec2 # The difference between current and last frame's mouse position.
 
-    Window.draw: Drawer # Can be used to draw things (see Drawer class).
+    Window.render_system: RenderSystem # To draw stuff (see RenderSystem class).
+
+    Window.lighting_system: LightingSystem # To handle scene lighting (see LightingSystem class).
 
     Window.delta_time: float # Time elapsed (in seconds) since last frame.
 
@@ -116,43 +133,52 @@ constructor(width: int, height: int, title?: str, max_fps?: int) # title and max
     start_loop(callback?: callable, draw_ui?: callable) -> None
     ```
 
-### Camera2D
+### Component
+The base class for all components
+
+* Properties
+    ```py
+    entity_id: int # The id of the entity this component belongs to.
+    ```
+
+### Transform (Component)
+Stores position, rotation and scale in 3D space.
+
 ```py
-constructor(position?: vec2, zoom?: float, rotation?: float)
+constructor(position?: vec3, rotation?: vec3, scale?: vec3)
 ```
 
 * Properties
 
     ```py
-    position: vec2 # Position of the Camera2D.
-    zoom: float # Zoom-in Scale.
-    rotation: float # Rotation of the camera.
-    ```
+    position: vec3 # Position in 3D space
 
-* Members
+    rotation: vec3 # Rotation in X Y Z axes
+
+    scale: vec3 # Scale in X Y Z axes
+    ```
+    
+* Methods
 
     ```py
-    # Activate the Camera2D
-    use() -> None
+    # Get the forward direction.
+    def get_forward() -> vec3:
 
-    # (static method) Deactivate the currently active Camera2D
-    Camera2D.use_none() -> None
+    # Get the right direction.
+    def get_right() -> vec3:
+
+    # Get the up direction.
+    def get_up() -> vec3:
     ```
 
-### Camera
+### Camera (Component)
 ```py
-constructor(position?: vec3, yaw?: float, pitch?: float, FOV?: float, near?: flaot, far?: float, up?: vec3)
+constructor(FOV?: float, near?: flaot, far?: float, up?: vec3)
 ```
 
 * Properties
 
     ```py
-    position: vec3 # The position of the Camera.
-
-    yaw: float # The yaw (rotation in Y-axis).
-
-    pitch: float # The pitch (rotation in X-axis).
-
     FOV: float # Field of view.
 
     near: float # The near clipping plane (closest distance camera can see.)
@@ -165,16 +191,6 @@ constructor(position?: vec3, yaw?: float, pitch?: float, FOV?: float, near?: fla
 * Methods
 
     ```py
-    # Get the direction camera is looking at.
-    get_forward() -> vec3
-
-    # Get the right direction of the camera.
-    get_right() -> vec3
-
-    # Get the up direction of the camera.
-    # NOTE: This is different from Camera.up
-    get_up() -> vec3
-
     # Get the viewport-projection matrix of the camera.
     get_vp_matrix() -> mat4
 
@@ -196,11 +212,118 @@ constructor(position?: vec3, yaw?: float, pitch?: float, FOV?: float, near?: fla
         camera_sensitivity = 0.002 # Sensitivity of the camera (can also be vec2(0.002, -0.002) to invert y-axis).
     ```
 
-### Drawer
+### Light (Component)
+Base class for all kind of Lights.
+
+```py
+constructor(color?: vec3, intensity?: float)
+```
+
 * Properties
 
     ```py
-    clear_color: vec4 # When clearing the screen, the color is used.
+        intensity: float # The intensity of the light.
+
+        color: vec3 # The color of the light.
+
+        active: bool # Whether the light is turned on or off.
+    ```
+
+### DirectionalLight (Component)
+```py
+# Inherits from Light.
+constructor(color: vec3)
+```
+
+* Properties
+
+    ```py
+    intensity: float # The intensity of the light.
+
+    color: vec3 # The color of the light.
+
+    active: bool # Whether the light is turned on or off.
+    ```
+
+### PointLight (Component)
+```py
+# Inherits from Light.
+constructor(color: vec3)
+```
+
+* Properties (+ all from Light)
+
+    ```py
+    intensity: float # The intensity of the light.
+
+    color: vec3 # The color of the light.
+
+    active: bool # Whether the light is turned on or off.
+    ```
+
+
+### Material
+Base class for all Materials.
+A Material defines color, lighting and shading of a Mesh.
+
+```py
+constructor(shader:? Shader, enable_lighting?: bool)
+```
+
+* Properties
+
+    ```py
+    shader: Shader # The shader of the material.
+    enable_lighting: bool # Whether shader of this material should input Light buffers.
+    ```
+
+* Methods
+
+    ```py
+    # Bind data to the shader.
+    bind() -> None
+    ```
+
+
+### FlatMaterial (Material)
+For flat shading.
+
+```py
+constructor(color?: vec3)
+```
+
+* Properties
+
+    ```py
+    color: vec3 # Albedo of the material.
+    ```
+
+### PhongMaterial (Material)
+For phong shading.
+
+```py
+constructor(color?: vec3, ambient_strength?: float, diffuse_strength?: float, specular_strength?: float, specular_exponent?: float)
+```
+
+* Properties
+
+    ```py
+    color: vec3 # Albedo of the material.
+    ambient_strength: float # Strength of ambience lighting.
+    diffuse_strength: float # Strength of diffuse lighting.
+    specular_strength: float # Strength of specular lighting.
+    specular_exponent: float # Exponent of specular lighting.
+    ```
+
+### System
+A base class for all systems.\
+NOTE: A system class is used by the engine, It should not be tweaked with directly.
+
+### RenderSystem (System)
+* Properties
+
+    ```py
+    clear_color: vec4 # When clearing the screen, this color is used.
     ```
 
 * Methods
@@ -209,8 +332,11 @@ constructor(position?: vec3, yaw?: float, pitch?: float, FOV?: float, near?: fla
     # Clear the screen.
     clear() -> None
 
-    # Draw a mesh. (Meshes are drawn at the end of the frame, there is no reason to call this method explicitly)
-    draw_mesh(mesh: Mesh) -> None
+    # Draw a mesh.
+    draw_mesh(transform: Transform, mesh: Mesh, material: Material) -> None
+
+    # Renders the scene.
+    update() -> None
 
     # Enable/Disable face culling.
     set_cull_face(flag: bool) -> None
@@ -220,6 +346,39 @@ constructor(position?: vec3, yaw?: float, pitch?: float, FOV?: float, near?: fla
 
     # Enable/Disable alpha blending.
     set_alpha_blending(flag: bool) -> None
+    ```
+
+### LightingSystem (System)
+* Properties
+
+    ```py
+    dlsb: _DirectionalLightShaderBuffer # DirectionalLight Shader Buffer
+    plsb: _PointLightShaderBuffer # PointLight Shader Buffer
+    ```
+
+* Methods
+
+    ```py
+    # Clear the screen.
+
+    # Update the lighting.
+    update() -> None
+
+    # Bind lighting buffer(s) with a shader.
+    bind_with_shader(shader: Shader)
+    ```
+
+### Vertex
+```py
+constructor(position: vec3, normal?: vec3)
+```
+
+* Propeties
+
+    ```py
+       position: vec3 # The position of the vertex.
+
+       normal: vec3 # The normal direction of the triangle this vertex belongs to.
     ```
 
 ### Shader
@@ -242,18 +401,47 @@ constructor(position?: vec3, yaw?: float, pitch?: float, FOV?: float, near?: fla
     Shader.load_from_buffer2(vertex: str, fragment: str) -> Shader
     ```
 
-### Vertex
+### Mesh
 ```py
-constructor(position: vec3, normal?: vec3)
+constructor(vertices?: list[Vertex], preserve_normals?: bool)
 ```
 
-* Propeties
+* Properties
 
     ```py
-       position: vec3 # The position of the vertex.
-
-       normal: vec3 # The normal direction of the triangle this vertex belongs to.
+    vertices: list[Vertex] # Vertices of the mesh.
     ```
+
+* Methods
+
+    ```py
+    # Recalculate the normals for each triangle.
+    regenerate_normals() -> None
+
+    # Update the shader (should be called after modifying the mesh).
+    refresh() -> None
+
+    # Bind the mesh with the shader to ready it for rendering.
+    bind(shader: Shader) -> None
+
+    # (static method) Takes a list of vertices, copies it again with inverted normals to create a "back side".
+    Mesh.add_double_sided(verts: list[Vertex]) -> list[Vertex]
+
+    # (static method) Creates a unit cube.
+    Mesh.create_box(double_sided?: bool) -> Mesh
+
+    # (static method) Creates a unit quad.
+    Mesh.create_quad(double_sided?: bool) -> Mesh
+
+    # (static method) Creates a unit disc (circle).
+    Mesh.create_disc(double_sided?: bool) -> Mesh
+
+    # (static method) Creates a unit sphere.
+    Mesh.create_sphere(double_sided?: bool) -> Mesh
+    ```
+
+
+
 
 ### Vertex2D
 ```py
@@ -300,115 +488,30 @@ constructor(position?: vec2, rotation?: float, scale?: vec2, color?: vec4, verti
     Polygon2D.create_circle(position?: vec2, radius?: float, color?: vec4) -> Polygon2D
     ```
 
-### Mesh
+### Camera2D
 ```py
-constructor(position?: vec3, rotation?: vec3, scale?: vec3, color?: vec3, vertices?: list[Vertex], shader?: Shader, preserve_normals?: bool)
+constructor(position?: vec2, zoom?: float, rotation?: float)
 ```
 
 * Properties
 
     ```py
-    position: vec3 # Position of the mesh.
-
-    rotation: vec3 # Rotation of the mesh.
-
-    scale: vec3 # Scale of the mesh.
-
-    color: vec3 # Color of the mesh.
-
-    vertices: list[Vertex] # Vertices of the mesh.
-
-    shader: Shader # Shader program to use for rendering of the mesh.
+    position: vec2 # Position of the Camera2D.
+    zoom: float # Zoom-in Scale.
+    rotation: float # Rotation of the camera.
     ```
 
-* Methods
+* Members
 
     ```py
-    # Recalculate the normals for each triangle.
-    regenerate_normals() -> None
+    # Activate the Camera2D
+    use() -> None
 
-    # Update the shader (should be called after modifying the mesh).
-    refresh() -> None
-
-    # Delete the mesh.
-    delete() -> None
-
-    # Renders the mesh (on lighting!).
-    # NOTE: Don't call this function by yourself, unless you know what you're doing.
-    render() -> None
-
-    # (static method) Takes a list of vertices, copies it again with inverted normals to create a "back side".
-    Mesh.add_double_sided(verts: list[Vertex]) -> list[Vertex]
-
-    # (static method) Creates a unit cube.
-    Mesh.create_box(double_sided?: bool) -> Mesh
-
-    # (static method) Creates a unit quad.
-    Mesh.create_quad(double_sided?: bool) -> Mesh
-
-    # (static method) Creates a unit disc (circle).
-    Mesh.create_disc(double_sided?: bool) -> Mesh
-
-    # (static method) Creates a unit sphere.
-    Mesh.create_sphere(double_sided?: bool) -> Mesh
+    # (static method) Deactivate the currently active Camera2D
+    Camera2D.use_none() -> None
     ```
 
-### Light
-NOTE: This is an abstract class. Don't instantiate it.
 
-```py
-constructor(color: vec3)
-```
-
-* Properties
-
-    ```py
-        intensity: float # The intensity of the light.
-
-        ambient_strength: float # The ambient light strength.
-
-        diffuse_strength: float # The diffuse light strength.
-
-        specular_strength: float # The specular light strength.
-
-        specular_exp: float # The specular exponent.
-
-        color: vec3 # The color of the light.
-    ```
-
-* Methods
-
-    ```py
-    # Activate the light.
-    activate() -> None
-
-    # Deactivate the light.
-    deactivate() -> None
-    ```
-
-### DirectionalLight
-```py
-# Inherits from Light.
-constructor(color: vec3, direction?: vec3)
-```
-
-* Properties (+ all from light)
-
-    ```py
-    direction: vec3 # The direction of the light.
-    ```
-
-### PointLight
-```py
-# Inherits from Light.
-constructor(color: vec3, position?: vec3)
-```
-
-* Properties (+ all from Light)
-
-    ```py
-    position: vec3 # The position of the light.
-    ```
 
 ### Physics.Point
 ```py
@@ -457,9 +560,43 @@ constructor(position: vec3 | vec2, radius: float)
     resolve_collision_balls(ball_1: Physics.Ball, ball_2: Physics.Ball) -> None
     ```
 
+### Entity
+```py
+constructor(components?: list[Component])
+```
+
+* Properties
+
+    ```py
+    id: int # Unique integer to identify an entity.
+    components: list[Component] # List of Components of the entity.
+    ```
+
+* Methods
+
+    ```py
+    # Returns a given component. If it doesn't exists, returns None.
+    get_component(component_type: type[Component]) -> Component | None
+
+    # Return whether the entity has a given component.
+    has_component(component_type: type[Component]) -> bool
+
+    # Creates a new component of given type and returns it. Raises TypeError if it already exists.
+    add_component(component_or_type: Component | type[Component]) -> Component
+
+    # Removes a given component. Raises TypeError if it doesn't exists.
+    remove_component(component_type: type[Component]) -> None
+    ```
+
 ## Miscellaneous stuff
 
 ```py
 # Rotate a vec2 by specified angle.
 rotate2d(vector: vec2, angle: float) -> vec2
+
+# Get an entity by it's ID, returns None if it doesn't exist.
+get_entity_from_id(entity_id: int) -> Entity | None
+
+# Convert Camel-Case to Snake-Case
+to_snake_case(name: str) -> str
 ```
