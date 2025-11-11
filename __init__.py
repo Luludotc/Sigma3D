@@ -7,7 +7,7 @@ os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
 try: 
     import pygame
 except ImportError:
-    print("Installing pygame... Press Ctrl + C to cancel")
+    print("Installing pygame... Press Ctrl + C to cancel.")
     system('python3 -m pip install pygame')
     import pygame
 from pygame.locals import *
@@ -15,36 +15,41 @@ from pygame.locals import *
 try: 
     import numpy as np
 except ImportError:
-    print("Installing numpy... Press Ctrl + C to cancel")
+    print("Installing numpy... Press Ctrl + C to cancel.")
     system('python3 -m pip install numpy')
     import numpy as np
 
 try: 
     import moderngl
 except ImportError:
-    print("Installing moderngl... Press Ctrl + C to cancel")
+    print("Installing moderngl... Press Ctrl + C to cancel.")
     system('python3 -m pip install moderngl')
     import moderngl
 
 try: 
     from glm import *
 except ImportError:
-    print("Installing pyglm... Press Ctrl + C to cancel")
+    print("Installing pyglm... Press Ctrl + C to cancel.")
     system('python3 -m pip install pyglm')
     from glm import *
+
+try: length(0) # type: ignore
+except NameError:
+    length = lambda x:0
+    rotate = lambda x, y, z:0
 
 print("Sigma3D welcomes you.")
 
 _ctx = None
-_basic_shader = None
-_global_window = None
-_active_camera = None
-_active_lights = []
-_all_objects = []
-_active_ui_camera = None
+_phong_shader = None
+_flat_shader = None
 _default_poly_shader = None
 _default_circle_shader = None
 default_shaders = {}
+
+_global_window = None
+_active_camera = None
+_active_ui_camera = None
 
 '''
 Provides some basic methods to help in physics calculations.
@@ -55,7 +60,7 @@ class Physics:
     '''
     class Point:
         def __init__(self, position: vec3 | vec2):
-            self.position = type(position)(*position.to_tuple())
+            self.position = type(position)(position)
             self.velocity = type(position)(0)
             self.acceleration = type(position)(0)
         
@@ -74,12 +79,46 @@ class Physics:
             self.acceleration += acceleration
     
     '''
+    A static line segment object.
+    '''
+    class Line:
+        def __init__(self, start: vec3 | vec3, end: vec3 | vec2):
+            if type(start) != type(end):
+                _raise_error("The start and end points of a Physics.Line must have same type and dimensions.")
+            
+            self.start = type(start)(start)
+            self.end = type(end)(end)
+
+    '''
     An n-sphere object.
     '''
     class Ball(Point):
         def __init__(self, position: vec3 | vec2, radius: float):
-            super().__init__(position)
+            super().__init__(type(position)(position))
             self.radius = radius
+    
+    '''
+    A softbody object.
+    '''
+    class Softbody:
+        def __init__(self, position: vec3 | vec2, points: list[None], joints: list[tuple[int, int, float]]):
+            self.position = type(position)(position)
+            self.points = points
+            self.joints = joints
+        
+        def step(self, delta_time: float = 1 / 60):
+            for point in self.points:
+                point.step(delta_time)
+            
+            for joint in self.joints:
+                start, end, rest_length = self.points[joint[0]], self.points[joint[1]], joint[2]
+                sub = end - start
+                mag = length(sub)
+                direction = sub / mag
+                move_dist = 0.5 * (mag - rest_length)
+                start += move_dist
+                end -= move_dist
+
     
     '''
     Returns whether two given spheres collide.
@@ -111,73 +150,47 @@ class Physics:
         else: direction = sub / dist
         ball_1.position += direction * move_dist
         ball_2.position -= direction * move_dist
-        
-
-'''
-For handling DirectionalLight shader buffer.
-'''
-class _DirectionalLightShaderBuffer:
-    def __init__(self):
-       self.ssbo = _ctx.buffer(dynamic=True,reserve=1)
-       self.buffer = []
-       self.buffer_stride = 11 # in floats, 11 * 4 = 44 bytes
-
-    def update(self) -> None:
-        self.buffer.clear()
-
-        for light in _active_lights:
-            if light.__class__ != DirectionalLight: continue
-            self.buffer += [
-                light.intensity,
-                light.ambient_strength,
-                light.diffuse_strength,
-                light.specular_strength,
-                light.specular_exp,
-                light.color.x, light.color.y, light.color.z,
-                light.direction.x, light.direction.y, light.direction.z
-            ]
-
-    # kindly ask the class to help us. (also you may want to watch your tone!)
-    def plz_do_something(self, shader) -> None: # rename this to bind()...? no.
-        if(len(self.buffer) >= self.buffer_stride):
-            self.ssbo.orphan(len(self.buffer) * 4)
-            self.ssbo.write(np.array(self.buffer, dtype='f4'))
-            self.ssbo.bind_to_storage_buffer(0)
-
-        shader.program['udlcount'] = int(len(self.buffer) / self.buffer_stride)
-
-'''
-For handling PointLight shader buffer.
-'''
-class _PointLightShaderBuffer:
-    def __init__(self):
-       self.ssbo = _ctx.buffer(dynamic=True,reserve=1)
-       self.buffer = []
-       self.buffer_stride = 11 # in floats, 11 * 4 = 44 bytes
+        ball_1.velocity = reflect(ball_1.velocity, direction)
+        ball_2.velocity = reflect(ball_2.velocity, -direction)
     
-    def update(self) -> None:
-        self.buffer.clear()
+    def check_collision_ball_line(ball: Ball, line: Line) -> bool:
+        sub = line.end - line.start
+        mag = length(sub)
+        direction = sub / mag
+        dist = dot(direction, ball.position - line.start)
+        p = None
+        if dist <= 0: p = line.start
+        elif dist >= mag: p = line.end
+        if p is None:
+            return abs(dot(vec2(direction.y, -direction.x), ball.position - line.start)) <= ball.radius
+        else:
+            return distance2(ball.position, p) <= ball.radius * ball.radius
+    
+    def resolve_constraint_ball_line(ball: Ball, line: Line) -> None:
+        sub = line.end - line.start
+        mag = length(sub)
+        direction = sub / mag
+        dist = dot(direction, ball.position - line.start)
+        p = None
+        if dist <= 0: p = line.start
+        elif dist >= mag: p = line.end
+        if p is None:
+            direction = vec2(direction.y, -direction.x)
+            dist = dot(direction, ball.position - line.start)
+            if dist < 0:
+                dist *= -1
+                direction *= -1
 
-        for light in _active_lights:
-            if light.__class__ != PointLight: continue
-            self.buffer += [
-                light.intensity,
-                light.ambient_strength,
-                light.diffuse_strength,
-                light.specular_strength,
-                light.specular_exp,
-                light.color.x, light.color.y, light.color.z,
-                light.position.x, light.position.y, light.position.z
-            ]
-
-    # kindly ask the class to help us. (also you may want to watch your tone!)
-    def plz_do_something(self, shader) -> None: # rename this to bind()...? no.
-        if(len(self.buffer) >= self.buffer_stride):
-            self.ssbo.orphan(len(self.buffer) * 4)
-            self.ssbo.write(np.array(self.buffer, dtype='f4'))
-            self.ssbo.bind_to_storage_buffer(1)
-
-        shader.program['uplcount'] = int(len(self.buffer) / self.buffer_stride)
+            if dist > ball.radius: return
+            ball.position += direction * (ball.radius - dist)
+            ball.velocity = reflect(ball.velocity, direction)
+        else:
+            sub = p - ball.position
+            mag = length(sub)
+            direction = sub / mag
+            if mag > ball.radius: return
+            ball.position += direction * (mag - ball.radius) * 0.5
+            ball.velocity = reflect(ball.velocity, -direction)
 
 '''
 Provides GLSL shader support.
@@ -230,27 +243,29 @@ class Shader:
             "#vertex\n" + vertex + '\n#fragment\n' + fragment
         )
 
-    def set_uniform(name: str, value):
-        pass
+    def set_uniform(self, name: str, value) -> None:
+        try:self.program[name] = value
+        except KeyError: pass
 
-    def get_uniform(name: str) -> float | int | vec2 | vec3 | vec4 | ivec2 | ivec3 | ivec4 | uvec2 | uvec3 | uvec4:
-        pass
+    def get_uniform(self, name: str) -> any:
+        try:return self.program[name]
+        except KeyError: pass
 
 '''
 Class for storing a vertex in three dimensional geometry.
 '''
 class Vertex:
     def __init__(self, position: vec3, normal: vec3 = vec3(0)):
-        self.position = position
-        self.normal = normal
+        self.position = vec3(position)
+        self.normal = vec3(normal)
 
 '''
 Class for storing a vertex in two dimensional geometry.
 '''
 class Vertex2D:
     def __init__(self, position: vec2, color: vec4 = vec4(1)):
-        self.position = position
-        self.color = color
+        self.position = vec2(position)
+        self.color = vec4(color)
 
 '''
 A 2D mesh.
@@ -260,10 +275,10 @@ class Polygon2D:
                 self, position: vec2 = vec2(0), rotation: float = 0, scale: vec2 = vec2(1), color: vec4 = vec4(1),
                  vertices: list[Vertex2D] = [], shader: Shader = None
             ):
-            self.position = position
+            self.position = vec2(position)
             self.rotation = rotation
-            self.scale = scale
-            self.color = color
+            self.scale = vec2(scale)
+            self.color = vec4(color)
             self.vertices = vertices
             self._vbo = None
             self._vao = None
@@ -295,9 +310,9 @@ class Polygon2D:
     '''
     def render(self) -> None:
         if _global_window is None: 
-            raise "Inactive window: No active window to render to."
+            _raise_error("Inactive window: No active window to render to.", RuntimeError)
         if _active_ui_camera == None:
-            raise "Inactive UI camera: Cannot render an object when no camera is active."
+            _raise_error("Inactive UI camera: Cannot render an object when no camera is active.", RuntimeError)
 
         ws = 2.0 / vec2(_global_window.get_size())
         ws *= vec2(1, -1)
@@ -306,11 +321,11 @@ class Polygon2D:
         transformed_pos = rotate2d(self.position - _active_ui_camera.position - _global_window.get_size() * 0.5, _active_ui_camera.rotation)\
                                 * _active_ui_camera.zoom + _global_window.get_size() * 0.5
         
-        self.shader.program['uposition'] = (transformed_pos * ws + wo).to_tuple()
-        self.shader.program['uscale'] = (self.scale * _active_ui_camera.zoom * ws * vec2(1, 1.0 / _global_window.aspect_ratio)).to_tuple()
-        self.shader.program['urotation'] = self.rotation - _active_ui_camera.rotation
-        self.shader.program['ucolor'] = self.color.to_tuple()
-        self.shader.program['uaspect_ratio'] = _global_window.aspect_ratio
+        self.shader.set_uniform('uposition', (transformed_pos * ws + wo).to_tuple())
+        self.shader.set_uniform('uscale', (self.scale * _active_ui_camera.zoom * ws * vec2(1, 1.0 / _global_window.aspect_ratio)).to_tuple())
+        self.shader.set_uniform('urotation', self.rotation - _active_ui_camera.rotation)
+        self.shader.set_uniform('ucolor', self.color.to_tuple())
+        self.shader.set_uniform('uaspect_ratio', _global_window.aspect_ratio)
         self._vao.render(moderngl.TRIANGLES)
     
     '''
@@ -352,23 +367,13 @@ class Polygon2D:
 A 3D Triangle Mesh.
 '''
 class Mesh:
-    def __init__(
-            self, position: vec3 = vec3(0),  rotation: vec3 = vec3(0), scale: vec3 = vec3(1), color: vec3 = vec3(1),
-            vertices: list[Vertex] = [], shader: Shader = None, preserve_normals: bool = False
-        ):
-        global _all_objects
-        self.position = position
-        self.rotation = rotation
-        self.scale = scale
-        self.color = color
+    def __init__(self, vertices: list[Vertex] = [], preserve_normals: bool = False):
         self.vertices = vertices
         self._vbo = None
         self._vao = None
-        self.shader = _basic_shader if shader is None else shader
-        if not preserve_normals: self.regenerate_normals()
 
+        if not preserve_normals: self.regenerate_normals()
         self.refresh()
-        _all_objects.append(self)
     
     '''
     Recalculate the normals for each triangle.
@@ -406,24 +411,12 @@ class Mesh:
 
         self._vert = np.array(verts, dtype='f4')
         self._vbo = _ctx.buffer(self._vert.tobytes())
-        self._vao = _ctx.vertex_array(self.shader.program, [(self._vbo, '3f 3f', 'in_vert', 'in_norm')])
     
     '''
-    Delete the mesh.
+    Binds the mesh to prepare it for rendering.
     '''
-    def delete(self) -> None:
-        global _all_objects
-        _all_objects = []
-        del self
-    
-    '''
-    Renders the mesh.
-    NOTE: Don't call this function by yourself, unless you know what you're doing.
-    Renders the mesh (no lighting!).
-    '''
-    def render(self) -> None:
-        if _active_camera == None:
-            raise "Inactive camera: Cannot render an object when no camera is active."
+    def bind(self, shader: Shader) -> None:
+        if _active_camera == None: return
         
         tp = _active_camera.get_vp_matrix()
         tup = []
@@ -433,7 +426,13 @@ class Mesh:
             tup.append(t[2])
             tup.append(t[3])
         
-        self.shader.program['uMVP'] = tup
+        shader.set_uniform('uMVP', tup)
+        self._vao = _ctx.vertex_array(shader.program, [(self._vbo, '3f 3f', 'in_vert', 'in_norm')])
+    
+    '''
+    Actually renders the object, assuming all the neccessary data has been sent to the shader.
+    '''
+    def _render_vao(self):
         self._vao.render(moderngl.TRIANGLES)
     
     '''
@@ -510,7 +509,6 @@ class Mesh:
             verts.append(Vertex(vec3(cos(angle), sin(angle), 0)))
             verts.append(Vertex(vec3(0)))
             angle += p_angle
-            print(angle)
             verts.append(Vertex(vec3(cos(angle), sin(angle), 0)))
             i += 1
         
@@ -580,55 +578,291 @@ class Mesh:
         
         return Mesh(vertices=verts)
 
+
 '''
-Class for drawing stuff.
+Base class for all components.
 '''
-class Drawer:
+class Component:
+    def __init__(self): 
+        self.entity_id = 0
+
+'''
+Defines position, orientation and scale of an entity in 3D space.
+'''
+class Transform(Component):
+    def __init__(self, position: vec3 = vec3(0), rotation: vec3 = vec3(0), scale: vec3 = vec3(1)):
+        super().__init__()
+        self.position = vec3(position)
+        self.rotation = vec3(rotation)
+        self.scale = vec3(scale)
+    
+    '''
+    Get the forward direction.
+    '''
+    def get_forward(self) -> vec3:
+        vec = rotate(vec3(0, 0, 1), self.rotation.x, vec3(-1, 0, 0))
+        vec = rotate(vec, self.rotation.y, vec3(0, -1, 0))
+        vec = rotate(vec, self.rotation.z, vec3(0, 0, -1))
+        return vec
+
+    '''
+    Get the right direction.
+    '''
+    def get_right(self) -> vec3:
+        return cross(self.get_forward(), vec3(0, 1, 0))
+    
+    '''
+    Get the up direction.
+    '''
+    def get_up(self) -> vec3:
+        return cross(self.get_right(), self.get_forward())
+
+'''
+Base class for all Materials.
+'''
+class Material:
+    def __init__(self, shader: Shader = None, enable_lighting: bool = False):
+        self.shader = shader
+        self.enable_lighting = enable_lighting
+    
+    def bind(self): ...
+
+'''
+A flat material with no shading.
+'''
+class FlatMaterial(Material):
+    def __init__(self, color: vec3 = vec3(1)):
+        super().__init__(_flat_shader, False)
+        self.color = vec3(color)
+    
+    def bind(self):
+        self.shader.set_uniform('ucolor', self.color.to_tuple())
+        self.shader.set_uniform('ucolor', self.color.to_tuple())
+
+'''
+A phong material, adds ambient, diffuse and specular lighting functionality.
+'''
+class PhongMaterial(Material):
+    def __init__(
+            self,
+            color: vec3 = vec3(1),
+            ambient_strength: float = 0.15,
+            diffuse_strength: float = 0.75,
+            specular_strength: float = 0.75,
+            specular_exponent: float = 32
+        ):
+        super().__init__(_phong_shader, True)
+        self.color = vec3(color)
+        self.ambient_strength = ambient_strength
+        self.diffuse_strength = diffuse_strength
+        self.specular_strength = specular_strength
+        self.specular_exponent = specular_exponent
+    
+    def bind(self):
+        self.shader.set_uniform('ucolor', self.color.to_tuple())
+        self.shader.set_uniform('uambient_strength', self.ambient_strength)
+        self.shader.set_uniform('udiffuse_strength', self.diffuse_strength)
+        self.shader.set_uniform('uspecular_strength', self.specular_strength)
+        self.shader.set_uniform('uspecular_exponent', self.specular_exponent)
+
+'''
+Component for rendering mesh.
+'''
+class MeshRenderer(Component):
+    def __init__(self, mesh: Mesh = None, material: Material = None):
+        super().__init__()
+        self.mesh = mesh
+        self.material = material
+
+'''
+Base class for light.
+'''
+class Light(Component):
+    def __init__(self, color: vec3 = vec3(1), intensity: float = 1.0):
+        super().__init__()
+        self.intensity = intensity
+        self.color = vec3(color)
+        self.active = True
+        _lights.append(self)
+
+'''
+Directional Light, can be used to simulate sunlight.
+'''
+class DirectionalLight(Light):
+    def __init__(self, color: vec3 = vec3(1), intensity: float = 1.0):
+        super().__init__(color, intensity)
+
+'''
+Point Light, can be used to simulate objects like lanters.
+'''
+class PointLight(Light):
+    def __init__(self, color: vec3 = vec3(1), intensity: float = 1.0):
+        super().__init__(color, intensity)
+
+'''
+For handling DirectionalLight shader buffer.
+'''
+class _DirectionalLightShaderBuffer:
     def __init__(self):
+       self.ssbo = _ctx.buffer(dynamic=True,reserve=1)
+       self.buffer = []
+       self.buffer_stride = 7 # in floats, 7 * 4 = 28 bytes
+    
+    '''
+    Clear the buffer.
+    '''
+    def clear(self) -> None:
+        self.buffer.clear()
+    
+    '''
+    Append to the buffer.
+    '''
+    def append(self, transform: Transform, light: DirectionalLight) -> None:
+        direction = transform.get_forward()
+        self.buffer += [
+            light.intensity,
+            light.color.x, light.color.y, light.color.z,
+            direction.x, direction.y, direction.z
+        ]
+
+    '''
+    Bind buffer with a shader.
+    '''
+    # kindly ask the class to help us. (also you may want to watch your tone!)
+    def plz_do_something(self, shader) -> None: # rename this to bind()...? no.
+        if(len(self.buffer) >= self.buffer_stride):
+            self.ssbo.orphan(len(self.buffer) * 4)
+            self.ssbo.write(np.array(self.buffer, dtype='f4'))
+            self.ssbo.bind_to_storage_buffer(0)
+
+        shader.set_uniform('udlcount', int(len(self.buffer) / self.buffer_stride))
+
+'''
+For handling PointLight shader buffer.
+'''
+class _PointLightShaderBuffer:
+    def __init__(self):
+       self.ssbo = _ctx.buffer(dynamic=True,reserve=1)
+       self.buffer = []
+       self.buffer_stride = 7 # in floats, 7 * 4 = 28 bytes
+    
+    '''
+    Clear the buffer.
+    '''
+    def clear(self) -> None:
+        self.buffer.clear()
+    
+    '''
+    Append to the buffer.
+    '''
+    def append(self, transform: Transform, light: PointLight) -> None:
+        self.buffer += [
+            light.intensity,
+            light.color.x, light.color.y, light.color.z,
+            transform.position.x, transform.position.y, transform.position.z
+        ]
+
+    '''
+    Bind buffer with a shader.
+    '''
+    # kindly ask the class to help us. (also you may want to watch your tone!)
+    def plz_do_something(self, shader) -> None: # rename this to bind()...? no.
+        if(len(self.buffer) >= self.buffer_stride):
+            self.ssbo.orphan(len(self.buffer) * 4)
+            self.ssbo.write(np.array(self.buffer, dtype='f4'))
+            self.ssbo.bind_to_storage_buffer(1)
+
+        shader.set_uniform('uplcount', int(len(self.buffer) / self.buffer_stride))
+
+'''
+Base class for all Systems.
+'''
+class System:
+    def __init__(self): ...
+    def update(self) -> None: ...
+
+'''
+For lighting stuff.
+'''
+class LightingSystem(System):
+    def __init__(self):
+        super().__init__()
+        self.dlsb = _DirectionalLightShaderBuffer()
+        self.plsb = _PointLightShaderBuffer()
+    
+    '''
+    Update the lighting.
+    '''
+    def update(self) -> None:
+        self.dlsb.clear()
+        self.plsb.clear()
+
+        for entity in _entities:
+            dl = entity.get_component(DirectionalLight)
+            pl = entity.get_component(PointLight)
+            tr = entity.get_component(Transform)
+            if tr is None: continue
+            if dl is not None and dl.active: self.dlsb.append(tr, dl)
+            if pl is not None and dl.active: self.plsb.append(tr, pl)
+    
+    '''
+    Bind lighting buffers with a shader.
+    '''
+    def bind_with_shader(self, shader: Shader):
+        self.dlsb.plz_do_something(shader)
+        self.plsb.plz_do_something(shader)
+
+'''
+For rendering stuff.
+'''
+class RenderSystem(System):
+    def __init__(self):
+        super().__init__()
         self.clear_color = vec4(0.05)
         self._dlsb = _DirectionalLightShaderBuffer()
         self._plsb = _PointLightShaderBuffer()
         _ctx.depth_func = "<="
 
     '''
-    Draws all the active scene objects, called at the end of the callback loop.
+    Draw a specified mesh.
     '''
-    def _draw_all(self) -> None:
-        for obj in _all_objects:
-            self.draw_mesh(obj)
+    def draw_mesh(self, transform: Transform, mesh: Mesh, material: Material) -> None:
+        if _active_camera is None: return
+        if _global_window is None: return
+        if material.enable_lighting: _global_window.lighting_system.bind_with_shader(material.shader)
+
+        camera_transform = _active_camera.get_transform()
+        if camera_transform is None: return
+        
+        material.shader.set_uniform('uview_pos', camera_transform.position.to_tuple())
+        material.shader.set_uniform('uposition', transform.position.to_tuple())
+        material.shader.set_uniform('urotation', transform.rotation.to_tuple())
+        material.shader.set_uniform('uscale', transform.scale.to_tuple())
+        material.bind()
+        mesh.bind(material.shader)
+        mesh._render_vao()
     
     '''
-    Update the lighting. Called just before rendering.
+    Draws all the active scene objects, called at the end of the callback loop.
     '''
-    def _update(self) -> None:
-        self._dlsb.update()
-        self._plsb.update()
+    def update(self) -> None:
+        for entity in _entities:
+            tr: MeshRenderer = entity.get_component(Transform)
+            mr: MeshRenderer = entity.get_component(MeshRenderer)
+            if tr is None or mr is None: continue
+            self.draw_mesh(tr, mr.mesh, mr.material)
+            
     
     '''
     Clear the screen.
     '''
     def clear(self) -> None:
         _ctx.clear(
-                self.clear_color.x,
-                self.clear_color.y,
-                self.clear_color.z,
-                self.clear_color.w,
-            )
-    
-    '''
-    Draw a specified mesh.
-    '''
-    def draw_mesh(self, mesh: Mesh) -> None:
-        if _active_camera is None: return
-        self._dlsb.plz_do_something(mesh.shader)
-        self._plsb.plz_do_something(mesh.shader)
-
-        mesh.shader.program['uview_pos'] = _active_camera.position.to_tuple()
-        mesh.shader.program['uposition'] = mesh.position.to_tuple()
-        mesh.shader.program['urotation'] = mesh.rotation.to_tuple()
-        mesh.shader.program['uscale'] = mesh.scale.to_tuple()
-        mesh.shader.program['ucolor'] = mesh.color.to_tuple()
-        mesh.render()
+            self.clear_color.x,
+            self.clear_color.y,
+            self.clear_color.z,
+            self.clear_color.w,
+        )
     
     '''
     Set OpenGL Flags.
@@ -656,105 +890,32 @@ class Drawer:
         self._set_gl_flag(_ctx.BLEND, flag)
     
 '''
-Base class for light.
+A 3D camera class.
 '''
-class Light:
-    def __init__(self, color: vec3 = vec3(1, 1, 1)):
-        self.intensity = 1.0
-        self.ambient_strength = 0.15
-        self.diffuse_strength = 0.75
-        self.specular_strength = 1.0
-        self.specular_exp = 32.0
-        self.color = color
-        self.activate()
-    
-    '''
-    Activate the light.
-    '''
-    def activate(self):
-        global _active_lights
-        for light in _active_lights:
-            if light is self: return
-        
-        _active_lights.append(self)
-
-    '''
-    Deactivate the light.
-    '''
-    def deactivate(self):
-        global _active_lights
-        for light in _active_lights:
-            if light is not self: continue
-
-            _active_lights.remove(light)
-            return
-
-'''
-Directional Light, can be used to simulate sunlight.
-'''
-class DirectionalLight(Light):
-    def __init__(self, color: vec3 = vec3(1), direction: vec3 = vec3(1.5, -1, 2)):
-        super().__init__(color)
-        self.direction = normalize(direction)
-
-'''
-Point Light, can be used to simulate objects like lanters.
-'''
-class PointLight(Light):
-    def __init__(self, color: vec3 = vec3(1), position: vec3 = vec3(0)):
-        super().__init__(color)
-        self.position = position
-
-'''
-A basic camera class.
-'''
-class Camera:
-    def __init__(self, position: vec3 = vec3(0), yaw: float = pi() / 2, pitch: float = 0,
-                FOV : float = radians(60), near: float = 0.2, far: float = 1000, up: vec3 = vec3(0, 1, 0)):
-        self.position = position
-        self.yaw = yaw
-        self.pitch = pitch
+class Camera(Component):
+    def __init__(self, FOV : float = radians(60), near: float = 0.2, far: float = 1000, up: vec3 = vec3(0, 1, 0)):
+        super().__init__()
         self.FOV = FOV
         self.near = near
         self.far = far
-        self.up = up
-    
-    def set_direction(self, direction: vec3):
-        d = normalize(direction)
-        self.pitch = asin(d.y)
-        self.yaw = atan2(d.x, d.z)
-
-    def look_at(self, position: vec3):
-        self.set_direction(position - self.position)
+        self.up = vec3(up)
     
     '''
-    Get the forward direction of camera.
+    Returns transform of the Camera (Transform of the entity Camera belongs to).
     '''
-    def get_forward(self) -> vec3:
-        return normalize(vec3(
-            cos(self.yaw) * cos(self.pitch),
-            sin(self.pitch),
-            sin(self.yaw) * cos(self.pitch)
-        ))
-
+    def get_transform(self) -> Transform | None:
+        entity = get_entity_from_id(self.entity_id)
+        if entity is None:
+            _raise_error("A Camera component must be attached to an entity.")
+        return entity.get_component(Transform)
     '''
-    Get the right direction of camera.
-    '''
-    def get_right(self) -> vec3:
-        return cross(self.get_forward(), self.up)
-    
-    '''
-    Get the up direction of camera.
-    NOTE: This is different from Camera.up!
-    '''
-    def get_up(self) -> vec3:
-        return cross(self.get_right(), self.get_forward())
-
-    '''
-    Get the Viewport-Projection matrix for the camrea.
+    Get the Viewport-Projection matrix for the camera.
     '''
     def get_vp_matrix(self) -> mat4x4:
-        view = lookAt(self.position, self.position + self.get_forward(), self.up)
+        transform = self.get_transform()
+        if transform is None: return
+
+        view = lookAt(transform.position, transform.position + transform.get_forward(), self.up)
         proj = perspective(self.FOV, _global_window.aspect_ratio, self.near, self.far)
         return proj * view
 
@@ -783,35 +944,38 @@ class Camera:
             _global_window.unlock_mouse() if _global_window.is_mouse_locked() else _global_window.lock_mouse()
         if not _global_window.is_mouse_locked(): return
 
+        transform = self.get_transform()
+        if transform is None: return
+
         if type(camera_sensitivity) == vec2:
-            self.yaw += _global_window.mouse_delta.x * camera_sensitivity.x
-            self.pitch -= _global_window.mouse_delta.y * camera_sensitivity.y
+            transform.rotation.y += _global_window.mouse_delta.x * camera_sensitivity.x
+            transform.rotation.x -= _global_window.mouse_delta.y * camera_sensitivity.y
         else:
-            self.yaw += _global_window.mouse_delta.x * camera_sensitivity
-            self.pitch -= _global_window.mouse_delta.y * camera_sensitivity
+            transform.rotation.y += _global_window.mouse_delta.x * camera_sensitivity
+            transform.rotation.x -= _global_window.mouse_delta.y * camera_sensitivity
         
-        if self.pitch > pi() / 2: self.pitch = pi() / 2 - 0.0001
-        if self.pitch < -pi() / 2: self.pitch = -pi() / 2 + 0.0001
+        # if self.pitch > pi() / 2: self.pitch = pi() / 2 - 0.0001
+        # if self.pitch < -pi() / 2: self.pitch = -pi() / 2 + 0.0001
 
         movement = vec3(0)
-        if _global_window.is_key_down(move_keys[0]): movement += self.get_forward()
-        if _global_window.is_key_down(move_keys[1]): movement -= self.get_right()
-        if _global_window.is_key_down(move_keys[2]): movement -= self.get_forward()
-        if _global_window.is_key_down(move_keys[3]): movement += self.get_right()
-        if _global_window.is_key_down(move_keys[4]): movement += self.get_up()
-        if _global_window.is_key_down(move_keys[5]): movement -= self.get_up()
+        if _global_window.is_key_down(move_keys[0]): movement += transform.get_forward()
+        if _global_window.is_key_down(move_keys[1]): movement -= transform.get_right()
+        if _global_window.is_key_down(move_keys[2]): movement -= transform.get_forward()
+        if _global_window.is_key_down(move_keys[3]): movement += transform.get_right()
+        if _global_window.is_key_down(move_keys[4]): movement += transform.get_up()
+        if _global_window.is_key_down(move_keys[5]): movement -= transform.get_up()
 
         if movement == vec3(0): return
 
         movement = normalize(movement)
-        self.position += movement * _global_window.delta_time * movement_speed
+        transform.position += movement * _global_window.delta_time * movement_speed
 
 '''
 A basic camera class for 2D rendering.
 '''
 class Camera2D:
     def __init__(self, position: vec2 = vec2(0), zoom: float = 1, rotation: float = 0):
-        self.position = position
+        self.position = vec2(position)
         self.zoom = zoom
         self.rotation = rotation
     
@@ -841,10 +1005,10 @@ class Window:
         pygame.init()
         self._width = width
         self._height = height
-        self._title = title
+        self._title = str(title)
         self._window = pygame.display.set_mode((width, height), pygame.OPENGL | pygame.DOUBLEBUF | pygame.RESIZABLE)
         self.aspect_ratio = 1
-        pygame.display.set_caption(title)
+        pygame.display.set_caption(self._title)
         _ctx = moderngl.create_context()
 
         # Input
@@ -858,16 +1022,17 @@ class Window:
         self._c_mouse_state = [False,] * 10
 
         # Render
-        self.draw = Drawer()
+        self.render_system = RenderSystem()
+        self.lighting_system = LightingSystem()
         self._maxFPS = max_fps
         self._clock = pygame.time.Clock()
         self.delta_time = 1
         self.time_elapsed = 0.0
 
         # Flags
-        self.draw.set_cull_face(True)
-        self.draw.set_depth_test(True)
-        self.draw.set_alpha_blending(True)
+        self.render_system.set_cull_face(True)
+        self.render_system.set_depth_test(True)
+        self.render_system.set_alpha_blending(True)
 
         _init_utils(self)
 
@@ -889,7 +1054,7 @@ class Window:
     Set the title of the window.
     '''
     def set_title(self, title: str) -> None:
-        self._title = title
+        self._title = str(title)
         pygame.display.set_caption(title)
     
     '''
@@ -1016,12 +1181,12 @@ class Window:
 
             self._update()
             callback()
-            self.draw._update()
-            self.draw.clear()
-            self.draw._draw_all()
-            self.draw.set_depth_test(False)
+            self.render_system.clear()
+            self.lighting_system.update()
+            self.render_system.update()
+            self.render_system.set_depth_test(False)
             draw_ui()
-            self.draw.set_depth_test(True)
+            self.render_system.set_depth_test(True)
             pygame.display.flip()
 
             if self._maxFPS is not None:
@@ -1048,13 +1213,73 @@ class Window:
             pygame.mouse.set_pos(self.get_size().x / 2, self.get_size().y / 2)
 
 '''
+A base entity.
+'''
+class Entity:
+    def __init__(self, components: list[Component] = []):
+        global _entities
+        self.id = _gen_entity_id()
+        self.components = []
+        for component in components: self.add_component(component)
+        _entities.append(self)
+    
+    '''
+    Returns a given component. If it doesn't exists, returns None.
+    '''
+    def get_component(self, component_type) -> Component | None:
+        for x in self.components:
+            if component_type != x.__class__: continue
+            return x
+        return None
+    
+    '''
+    Return whether the entity has a given component.
+    '''
+    def has_component(self, component_type) -> bool:
+        for x in  self.components:
+            if component_type != x.__class__: continue
+            return True
+        return False
+
+    '''
+    Creates a new component of given type and returns it. Raises TypeError if it already exists.
+    '''
+    def add_component(self, component_or_type) -> Component:
+        if component_or_type.__class__ != type:
+            if self.has_component(component_or_type.__class__):
+                _raise_error(f"Entity.add_component({component_or_type}) -> Component already exists.")
+            self.components.append(component_or_type)
+            component_or_type.entity_id = self.id
+        else:
+            if self.has_component(component_or_type):
+                _raise_error(f"Entity.add_component({component_or_type}) -> Component already exists.")
+            self.components.append(component_or_type())
+            self.components[-1].entity_id = self.id
+
+        name = to_snake_case(self.components[-1].__class__.__name__)
+        try:getattr(self, name)
+        except AttributeError: setattr(self, name, self.components[-1])
+        return self.components[-1]
+
+    '''
+    Removes a given component. Raises TypeError if it doesn't exists.
+    '''
+    def remove_component(self, component_type) -> None:
+        for i in range(len(self.components)):
+            if component_type != self.components[i].__class__: continue
+            self.components.pop(i)
+            return
+            
+        _raise_error(f"Entity.remove_component({component_type}) -> Component doesn't exists.")
+
+'''
 Initialize shaders and stuff.
 '''
 def _init_utils(window: Window) -> None:
-    global default_shaders, _basic_shader, _global_window, _active_ui_camera,\
-            _default_poly_shader, _default_circle_shader
+    global default_shaders, _phong_shader, _global_window, _active_ui_camera,\
+            _default_poly_shader, _default_circle_shader, _flat_shader
 
-    default_shaders['phong.vertex'] = '''
+    default_shaders['mesh.vertex'] = '''
     #version 430 core
     layout(location = 0) in vec3 in_vert;
     layout(location = 1) in vec3 in_norm;
@@ -1118,9 +1343,13 @@ def _init_utils(window: Window) -> None:
 
     uniform vec3 uview_pos;
     uniform vec3 ucolor;
+    uniform float uambient_strength;
+    uniform float udiffuse_strength;
+    uniform float uspecular_strength;
+    uniform float uspecular_exponent;
 
-    const int dl_stride = 11;
-    const int pl_stride = 11;
+    const int dl_stride = 7;
+    const int pl_stride = 7;
     
     in vec3 normal;
     in vec3 frag_pos;
@@ -1132,56 +1361,65 @@ def _init_utils(window: Window) -> None:
         for(int i = 0; i < udlcount; i ++)
         {
             float light_intensity = dldata[i * dl_stride];
-            float ambient_strength = dldata[i * dl_stride + 1];
-            float diffuse_strength = dldata[i * dl_stride + 2];
-            float specular_strength = dldata[i * dl_stride + 3];
-            float specular_exp = dldata[i * dl_stride + 4];
             vec3 light_color = vec3(
-                dldata[i * dl_stride + 5],
-                dldata[i * dl_stride + 6],
-                dldata[i * dl_stride + 7]
+                dldata[i * dl_stride + 1],
+                dldata[i * dl_stride + 2],
+                dldata[i * dl_stride + 3]
             );
             vec3 light_dir = normalize(vec3(
-                dldata[i * dl_stride + 8],
-                dldata[i * dl_stride + 9],
-                dldata[i * dl_stride + 10]
+                dldata[i * dl_stride + 4],
+                dldata[i * dl_stride + 5],
+                dldata[i * dl_stride + 6]
             ));
 
             vec3 reflect_dir = reflect(-light_dir, normal);
-            float specular = pow(max(dot(view_dir, reflect_dir), 0), specular_exp);
+            float specular = pow(max(dot(view_dir, reflect_dir), 0), uspecular_exponent);
 
-            light += light_color * light_intensity * ambient_strength;
-            light += light_color * light_intensity * diffuse_strength * max(dot(normal, -light_dir), 0);
-            light += light_color * light_intensity * specular_strength * specular;
+            light += light_color * light_intensity * uambient_strength;
+            light += light_color * light_intensity * udiffuse_strength * max(dot(normal, -light_dir), 0);
+            light += light_color * light_intensity * uspecular_strength * specular;
         }
 
         for(int i = 0; i < uplcount; i ++)
         {
             float light_intensity = pldata[i * pl_stride];
-            float ambient_strength = pldata[i * pl_stride + 1];
-            float diffuse_strength = pldata[i * pl_stride + 2];
-            float specular_strength = pldata[i * pl_stride + 3];
-            float specular_exp = pldata[i * pl_stride + 4];
             vec3 light_color = vec3(
-                pldata[i * pl_stride + 5],
-                pldata[i * pl_stride + 6],
-                pldata[i * pl_stride + 7]
+                pldata[i * pl_stride + 1],
+                pldata[i * pl_stride + 2],
+                pldata[i * pl_stride + 3]
             );
-            vec3 light_dir = normalize(frag_pos - vec3(
-                pldata[i * pl_stride + 8],
-                pldata[i * pl_stride + 9],
-                pldata[i * pl_stride + 10]
-            ));
+            vec3 light_pos_rel = frag_pos - vec3(
+                pldata[i * pl_stride + 4],
+                pldata[i * pl_stride + 5],
+                pldata[i * pl_stride + 6]
+            );
+            vec3 light_dir = normalize(light_pos_rel);
+            float dist_sqr = dot(light_pos_rel, light_pos_rel);
 
             vec3 reflect_dir = reflect(-light_dir, normal);
-            float specular = pow(max(dot(view_dir, reflect_dir), 0), specular_exp);
+            float specular = pow(max(dot(view_dir, reflect_dir), 0), uspecular_exponent);
 
-            light += light_color * light_intensity * ambient_strength;
-            light += light_color * light_intensity * diffuse_strength * max(dot(normal, -light_dir), 0);
-            light += light_color * light_intensity * specular_strength * specular;
+            light += (light_color * light_intensity * uambient_strength +
+                      light_color * light_intensity * udiffuse_strength * max(dot(normal, -light_dir), 0) +
+                      light_color * light_intensity * uspecular_strength * specular) * (1.0 / dist_sqr);
         }
 
         f_color = vec4(light * ucolor, 1);
+    }
+    '''
+    
+    default_shaders['flat.fragment'] = '''
+    #version 430 core
+    layout(location = 0) out vec4 f_color;
+
+    uniform vec3 ucolor;
+
+    in vec3 normal;
+    in vec3 frag_pos;
+
+    void main()
+    {
+        f_color = vec4(ucolor + normal * 0.0000001, 1);
     }
     '''
 
@@ -1244,13 +1482,43 @@ def _init_utils(window: Window) -> None:
     }
     '''
 
-    _basic_shader = Shader().load_from_buffer2(default_shaders['phong.vertex'], default_shaders['phong.fragment'])
-    _default_poly_shader = Shader().load_from_buffer2(default_shaders['polygon.vertex'], default_shaders['polygon.fragment'])
-    _default_circle_shader = Shader().load_from_buffer2(default_shaders['polygon.vertex'], default_shaders['polygon.circle.fragment'])
+    _phong_shader = Shader.load_from_buffer2(default_shaders['mesh.vertex'], default_shaders['phong.fragment'])
+    _flat_shader = Shader.load_from_buffer2(default_shaders['mesh.vertex'], default_shaders['flat.fragment'])
+    _default_poly_shader = Shader.load_from_buffer2(default_shaders['polygon.vertex'], default_shaders['polygon.fragment'])
+    _default_circle_shader = Shader.load_from_buffer2(default_shaders['polygon.vertex'], default_shaders['polygon.circle.fragment'])
 
     _global_window = window
     _active_ui_camera = Camera2D()
 
+
+def _gen_entity_id():
+    global _entity_id_last
+    _entity_id_last += 1
+    return _entity_id_last
+
+'''
+
+'''
+def get_entity_from_id(entity_id: int) -> Entity | None:
+    for entity in _entities:
+        if entity.id != entity_id: continue
+        return entity
+    return None
+
 def rotate2d(vector: vec2, angle: float) -> vec2:
     angle = atan2(vector.y, vector.x) + angle
     return vec2(cos(angle), sin(angle)) * length(vector)
+
+def _raise_error(error, type=TypeError):
+    raise type('\033[31m' + error + '\033[0m')
+
+def to_snake_case(name: str):
+    result = name[0].lower()
+    for c in name[1:]:
+        if c.isupper(): result += '_'
+        result += c.lower()
+    return result
+
+_entities: list[Entity] = []
+_lights: list[Entity] = []
+_entity_id_last = 0
