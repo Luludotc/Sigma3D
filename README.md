@@ -1,5 +1,5 @@
 # Sigma3D
-* Sigma3D is a basic 3D Game Engine in made in Python with possible support for physics in future (hopefully).
+* Sigma3D is a basic 3D renderer in made in Python with possible support for physics in future (hopefully).
 
 ## Installation
 
@@ -66,19 +66,19 @@ constructor(width: int, height: int, title?: str, max_fps?: int) # title and max
 * Properties
 
     ```py
-    Window.aspect_ratio: float # The ratio of width by height of the window
+    aspect_ratio: float # The ratio of width by height of the window
 
-    Window.mouse_pos: vec2 # Position of the mouse pointer relative to the window.
+    mouse_pos: vec2 # Position of the mouse pointer relative to the window.
 
-    Window.mouse_delta: vec2 # The difference between current and last frame's mouse position.
+    mouse_delta: vec2 # The difference between current and last frame's mouse position.
 
-    Window.render_system: RenderSystem # To draw stuff (see RenderSystem class).
+    render_system: RenderSystem # To draw stuff (see RenderSystem class).
 
-    Window.lighting_system: LightingSystem # To handle scene lighting (see LightingSystem class).
+    lighting_system: LightingSystem # To handle scene lighting (see LightingSystem class).
 
-    Window.delta_time: float # Time elapsed (in seconds) since last frame.
+    delta_time: float # Time elapsed (in seconds) since last frame.
 
-    Window.time_elapsed: float # Time elapsed (in seconds) since the creation of the window.
+    time_elapsed: float # Time elapsed (in seconds) since the creation of the window.
     ```
 
 * Methods
@@ -222,11 +222,11 @@ constructor(color?: vec3, intensity?: float)
 * Properties
 
     ```py
-        intensity: float # The intensity of the light.
+    intensity: float # The intensity of the light.
 
-        color: vec3 # The color of the light.
+    color: vec3 # The color of the light.
 
-        active: bool # Whether the light is turned on or off.
+    active: bool # Whether the light is turned on or off.
     ```
 
 ### DirectionalLight (Component)
