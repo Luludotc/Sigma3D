@@ -129,7 +129,7 @@ constructor(width: int, height: int, title?: str, max_fps?: int) # title and max
     # Return whether the given mouse button is released in the current frame.
     is_mouse_released(button) -> bool
     
-    # Start the loop, calls `callback` function once every frame, calls `draw_ui` function after 3D rendering for drawing UI objects.
+    # Start the window loop, calls `callback` function once every frame, calls `draw_ui` function after 3D rendering for drawing UI objects.
     start_loop(callback?: callable, draw_ui?: callable) -> None
     ```
 
@@ -169,6 +169,9 @@ constructor(position?: vec3, rotation?: vec3, scale?: vec3)
 
     # Get the up direction.
     def get_up() -> vec3:
+
+    # Get the Yaw (rotation in y-axis) and Pitch (rotation in x-axis).
+    def get_yaw_pitch() -> vec2:
     ```
 
 ### Camera (Component)
@@ -200,7 +203,7 @@ constructor(FOV?: float, near?: flaot, far?: float, up?: vec3)
     # (static method) Deactivate the current active camera.
     Camera.use_none() -> None
 
-    # A basic first-person controller
+    # A basic first-person controller, Intended for debugging.
     control(active_key?, move_keys?: tuple, movement_speed?: float, camera_sensitivity?: float) -> None
 
         active_key = K_ESCAPE # The key to lock/unlock mouse.
@@ -232,7 +235,34 @@ constructor(color?: vec3, intensity?: float)
 ### DirectionalLight (Component)
 ```py
 # Inherits from Light.
-constructor(color: vec3)
+constructor(color?: vec3, intensity?: float, sun_color?: vec3, sun_strength?: float, sun_exponent?: float, sun_tint?: float, is_sun?: bool)
+```
+
+* Properties
+
+    ```py
+    intensity: float # The intensity of the light.
+
+    color: vec3 # The color of the light.
+
+    active: bool # Whether the light is turned on or off.
+
+    # NOTE: These "sun" values are used in while rendering Enviroment (see Enviroment class), can be disabled by DirectionalLight.is_sun = False.
+    sun_color: vec3 # Color of the sun.
+
+    sun_strength: float # Intensity of the sun.
+
+    sun_exponent: float # Inverse size of the sun.
+
+    sun_tint: float # Tint color for the sun, can be used to make outline around the sun.
+
+    is_sun: bool # Whether an Enviroment should render the DirectionalLight as a sun.
+    ```
+
+### PointLight (Component)
+```py
+# Inherits from Light.
+constructor(color?: vec3, intensity?: float)
 ```
 
 * Properties
@@ -245,20 +275,36 @@ constructor(color: vec3)
     active: bool # Whether the light is turned on or off.
     ```
 
-### PointLight (Component)
+### Enviroment (Component)
 ```py
-# Inherits from Light.
-constructor(color: vec3)
+constructor(mode?: Enviroment.Sky | Enviroment.Solid, sky_color?: vec3, solid_color?: vec3)
 ```
 
-* Properties (+ all from Light)
+* Properties
 
     ```py
-    intensity: float # The intensity of the light.
+    polygon: Polygon2D # The Polygon where Enviroment is rendered to.
+    
+    sky_color: vec3 # The color of the sky, this color is used if mode is Enviroment.Sky
+    
+    solid_color: vec3 # The color of the solid background, this color is used if mode is Enviroment.Solid
+    ```
 
-    color: vec3 # The color of the light.
+* Methods
 
-    active: bool # Whether the light is turned on or off.
+    ```py
+    # Set the enviroment mode.
+    set_mode(mode: Enviroment.Sky | Enviroment.Solid) -> None
+
+    # Activate the Enviroment.
+    use() -> None
+
+    # (static method) Deactivate the currently active Enviroment.
+    Enviroment.use_none() -> None
+
+    # Render the Enviroment.
+    # NOTE: The active Enviroment is rendered just before rendering The scene, there is no need to call this function unless you want to.
+    render() -> None
     ```
 
 
@@ -332,6 +378,9 @@ NOTE: A system class is used by the engine, It should not be tweaked with direct
     # Clear the screen.
     clear() -> None
 
+    # Draws the active enviroment.
+    draw_enviroment() -> None
+
     # Draw a mesh.
     draw_mesh(transform: Transform, mesh: Mesh, material: Material) -> None
 
@@ -399,6 +448,12 @@ constructor(position: vec3, normal?: vec3)
 
     # (static method) load a shader program from a vertex shader and a fragment shader.
     Shader.load_from_buffer2(vertex: str, fragment: str) -> Shader
+
+    # Set the value of a shader uniform. (vectors and matrices must be provided as a tuple or list)
+    set_uniform(name, value) -> None
+
+    # Get the value of a shader uniform.
+    get_uniform(name) -> any
     ```
 
 ### Mesh
@@ -513,52 +568,9 @@ constructor(position?: vec2, zoom?: float, rotation?: float)
 
 
 
-### Physics.Point
-```py
-constructor(position: vec3 | vec2)
-```
-
-* Properties
-
-    ```py
-    position: vec3 | vec2 # Position of the point.
-    velocity: vec3 | vec2 # Velocity of the point.
-    acceleration: vec3 | vec2 # Acceleration of the point.
-    ```
-
-* Methods
-
-    ```py
-    # Calculate position for the next frame.
-    step(delta_time?: float) -> None
-
-    # Add acceleration.
-    accelerate(acceleration: vec3 | vec2) -> None
-    ```
-
-### Physics.Ball
-```py
-# Inherits from Physics.Point.
-constructor(position: vec3 | vec2, radius: float)
-```
-
-* Properties (+ all from Physics.Point)
-
-    ```py
-    radius: float # Radius of the sphere
-    ```
-
 ### Physics
-
-* Methods
-
-    ```py
-    # Returns whether the two given Physics.Ball collide or not.
-    check_collision_balls(ball_1: Physics.Ball, ball_2: Physics.Ball) -> bool
-
-    # Resolves the collision between two Physics.Ball.
-    resolve_collision_balls(ball_1: Physics.Ball, ball_2: Physics.Ball) -> None
-    ```
+Physics engine is not completed yet it will will take quite some time.\
+I won't recommend using the incomplete physics engine.
 
 ### Entity
 ```py
